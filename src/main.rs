@@ -1,10 +1,9 @@
 mod class_file;
 use class_file::class_file::ClassFile;
 use std::fs::File;
-use std::io::Read;
 use std::io::BufReader;
 
-static FILENAME: &str = "main.class";
+static FILENAME: &str = "Main.class";
 
 fn main() {
     
