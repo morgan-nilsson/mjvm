@@ -1,5 +1,6 @@
 use std::io::{BufRead, BufReader, Read};
 
+#[derive(Debug)]
 pub struct ClassFile {
     magic: u32,
     minor_version: u16,
@@ -399,6 +400,7 @@ impl CpInfo {
     }
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum AccessFlags {
     Public = 0x0001,
     Final = 0x0010,
@@ -429,6 +431,7 @@ impl TryFrom<u16> for AccessFlags {
 }
 
 
+#[derive(Debug)]
 pub struct FieldInfo {
     access_flags: FieldInfoAccessFlags,
     name_index: u16,
@@ -479,6 +482,7 @@ impl FieldInfo {
     }
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum FieldInfoAccessFlags {
     Public = 0x0001,
     Private = 0x0002,
@@ -510,6 +514,7 @@ impl TryFrom<u16> for FieldInfoAccessFlags {
     }
 }
 
+#[derive(Debug)]
 pub struct MethodInfo {
     access_flags: MethodInfoAccessFlags,
     name_index: u16,
@@ -560,6 +565,7 @@ impl MethodInfo {
     }
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum MethodInfoAccessFlags {
     Public = 0x0001,
     Private = 0x0002,
@@ -597,6 +603,7 @@ impl TryFrom<u16> for MethodInfoAccessFlags {
     }
 }
 
+#[derive(Debug)]
 pub enum AttributeInfo {
     ConstantValue { constant_value_index: u16 },
     Code { max_stack: u16, max_locals: u16, code_length: u32, code: Vec<u8>, exception_table_length: u16, exception_table: Vec<ExceptionTableEntry>, attributes_count: u16, attributes: Vec<AttributeInfo> },
@@ -716,6 +723,7 @@ impl TryFrom<&str> for AttributeInfoType {
     }
 }
 
+#[derive(Debug)]
 pub struct ExceptionTableEntry {
     start_pc: u16,
     end_pc: u16,
@@ -723,10 +731,12 @@ pub struct ExceptionTableEntry {
     catch_type: u16,
 }
 
+#[derive(Debug)]
 pub struct StackMapFrame {
 
 }
 
+#[derive(Debug)]
 pub struct InnerClassInfo {
     inner_class_info_index: u16,
     outer_class_info_index: u16,
@@ -749,11 +759,13 @@ pub enum InnerClassAccessFlags {
     Enum = 0x4000,
 }
 
+#[derive(Debug)]
 pub struct LineNumberInfo {
     start_pc: u16,
     line_number: u16,
 }
 
+#[derive(Debug)]
 pub struct LocalVariableInfo {
     start_pc: u16,
     length: u16,
@@ -762,6 +774,7 @@ pub struct LocalVariableInfo {
     index: u16,
 }
 
+#[derive(Debug)]
 pub struct LocalVariableTypeInfo {
     start_pc: u16,
     length: u16,
@@ -770,53 +783,63 @@ pub struct LocalVariableTypeInfo {
     index: u16,
 }
 
+#[derive(Debug)]
 pub struct Annotation {
     type_index: u16,
     num_element_value_pairs: u16,
     element_value_pairs: Vec<ElementValuePair>,
 }
 
+#[derive(Debug)]
 pub struct ElementValuePair {
     element_name_index: u16,
     value: ElementValue,
 }
 
+#[derive(Debug)]
 pub struct ParameterAnnotations {
     num_annotations: u16,
     annotations: Vec<Annotation>,
 }
 
+#[derive(Debug)]
 pub struct TypeAnnotation {
 
 }
 
+#[derive(Debug)]
 pub struct ElementValue {
 
 }
 
+#[derive(Debug)]
 pub struct BootstrapMethod {
     bootstrap_method_ref: u16,
     num_bootstrap_arguments: u16,
     bootstrap_arguments: Vec<u16>,
 }
 
+#[derive(Debug)]
 pub struct MethodParameter {
     name_index: u16,
     access_flags: MethodParameterAccessFlags,
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum MethodParameterAccessFlags {
     Final = 0x0010,
     Synthetic = 0x1000,
     Mandated = 0x8000,
 }
 
+#[derive(Debug)]
 pub struct ModuleRequire {
     required_module_index: u16,
     required_flags: ModuleRequireFlags,
     required_version_index: u16,
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum ModuleRequireFlags {
     Transitive = 0x0020,
     StaticPhase = 0x0040,
@@ -824,6 +847,7 @@ pub enum ModuleRequireFlags {
     Mandated = 0x8000,
 }
 
+#[derive(Debug)]
 pub struct ModuleExport {
     exported_package_index: u16,
     export_flags: ModuleExportFlags,
@@ -831,11 +855,13 @@ pub struct ModuleExport {
     exported_to_index: Vec<u16>,
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum ModuleExportFlags {
     Synthetic = 0x1000,
     Mandated = 0x8000,
 }
 
+#[derive(Debug)]
 pub struct ModuleOpen {
     opens_index: u16,
     opens_flags: ModuleOpensFlags,
@@ -843,17 +869,20 @@ pub struct ModuleOpen {
     opens_to_index: Vec<u16>,
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum ModuleOpensFlags {
     Synthetic = 0x1000,
     Mandated = 0x8000,
 }
 
+#[derive(Debug)]
 pub struct ModuleProvide {
     provided_service_index: u16,
     provides_with_count: u16,
     provides_with_index: Vec<u16>,
 }
 
+#[derive(Debug)]
 pub struct RecordComponentInfo {
     name_index: u16,
     descriptor_index: u16,
