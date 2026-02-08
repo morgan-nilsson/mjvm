@@ -581,7 +581,6 @@ pub enum AttributeInfo {
     LocalVariableTypeTable { local_variable_type_table_length: u16, local_variable_type_table: Vec<LocalVariableTypeInfo> },
     Deprecated,
     RuntimeVisibleAnnotations { num_annotations: u16, annotations: Vec<Annotation> },
-    // TODO: ElementValue
     RuntimeInvisibleAnnotations { num_annotations: u16, annotations: Vec<Annotation> },
     RuntimeVisibleParameterAnnotations { num_parameters: u8, parameter_annotations: Vec<ParameterAnnotations> },
     RuntimeInvisibleParameterAnnotations { num_parameters: u8, parameter_annotations: Vec<ParameterAnnotations> },
