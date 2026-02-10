@@ -691,7 +691,7 @@ impl AttributeInfo {
 
                 let mut entries = Vec::with_capacity(number_of_entries as usize);
                 for _ in 0..number_of_entries {
-                    let entry = StackMapFrame::from_reader(buf_reader);
+                    let entry = StackMapFrame::from_reader(buf_reader)?;
                     entries.push(entry);
                 }
 
@@ -1125,13 +1125,136 @@ impl ExceptionTableEntry {
 }
 
 #[derive(Debug)]
-pub struct StackMapFrame {
-
+pub enum StackMapFrame {
+    SameFrame { frame_type: u8 },
+    SameLocals1StackItemFrame { frame_type: u8, stack: VerificationTypeInfo },
+    SameLocals1StackItemFrameExtended { frame_type: u8, offset_delta: u16, stack: VerificationTypeInfo },
+    ChopFrame { frame_type: u8, offset_delta: u16 },
+    SameFrameExtended { frame_type: u8, offset_delta: u16 },
+    AppendFrame { frame_type: u8, offset_delta: u16, locals: Vec<VerificationTypeInfo> },
+    FullFrame { frame_type: u8, offset_delta: u16, number_of_locals: u16, locals: Vec<VerificationTypeInfo>, number_of_stack_items: u16, stack: Vec<VerificationTypeInfo> },
 }
 
 impl StackMapFrame {
-    pub fn from_reader<R: BufRead>(buf_reader: &mut R) -> Self {
-        todo!("StackMapFrame parsing not implemented yet");
+    pub fn from_reader<R: BufRead>(buf_reader: &mut R) -> Result<Self> {
+        let mut frame_type_buf = [0; 1];
+        buf_reader.read_exact(&mut frame_type_buf)?;
+        let frame_type = u8::from_be_bytes(frame_type_buf);
+
+        match frame_type {
+            0..=63 => Ok(StackMapFrame::SameFrame { frame_type }),
+            64..=127 => {
+                let stack = VerificationTypeInfo::from_reader(buf_reader)?;
+                Ok(StackMapFrame::SameLocals1StackItemFrame { frame_type, stack })
+            }
+            247 => {
+                let mut offset_delta_buf = [0; 2];
+                buf_reader.read_exact(&mut offset_delta_buf)?;
+                let offset_delta = u16::from_be_bytes(offset_delta_buf);
+                let stack = VerificationTypeInfo::from_reader(buf_reader)?;
+                Ok(StackMapFrame::SameLocals1StackItemFrameExtended { frame_type, offset_delta, stack })
+            }
+            248..=250 => {
+                let mut offset_delta_buf = [0; 2];
+                buf_reader.read_exact(&mut offset_delta_buf)?;
+                let offset_delta = u16::from_be_bytes(offset_delta_buf);
+                Ok(StackMapFrame::ChopFrame { frame_type, offset_delta })
+            }
+            251 => {
+                let mut offset_delta_buf = [0; 2];
+                buf_reader.read_exact(&mut offset_delta_buf)?;
+                let offset_delta = u16::from_be_bytes(offset_delta_buf);
+                Ok(StackMapFrame::SameFrameExtended { frame_type, offset_delta })
+            }
+            252..=254 => {
+                let mut offset_delta_buf = [0; 2];
+                buf_reader.read_exact(&mut offset_delta_buf)?;
+                let offset_delta = u16::from_be_bytes(offset_delta_buf);
+
+                let number_of_locals = (frame_type - 251) as usize;
+                let mut locals = Vec::with_capacity(number_of_locals);
+                for _ in 0..number_of_locals {
+                    let local = VerificationTypeInfo::from_reader(buf_reader)?;
+                    locals.push(local);
+                }
+
+                Ok(StackMapFrame::AppendFrame { frame_type, offset_delta, locals })
+            }
+            255 => {
+                let mut offset_delta_buf = [0; 2];
+                buf_reader.read_exact(&mut offset_delta_buf)?;
+                let offset_delta = u16::from_be_bytes(offset_delta_buf);
+
+                let mut number_of_locals_buf = [0; 2];
+                buf_reader.read_exact(&mut number_of_locals_buf)?;
+                let number_of_locals = u16::from_be_bytes(number_of_locals_buf);
+
+                let mut locals = Vec::with_capacity(number_of_locals as usize);
+                for _ in 0..number_of_locals {
+                    let local = VerificationTypeInfo::from_reader(buf_reader)?;
+                    locals.push(local);
+                }
+
+                let mut number_of_stack_items_buf = [0; 2];
+                buf_reader.read_exact(&mut number_of_stack_items_buf)?;
+                let number_of_stack_items = u16::from_be_bytes(number_of_stack_items_buf);
+
+                let mut stack = Vec::with_capacity(number_of_stack_items as usize);
+
+                for _ in 0..number_of_stack_items {
+                    let stack_item = VerificationTypeInfo::from_reader(buf_reader)?;
+                    stack.push(stack_item);
+                }
+
+                Ok(StackMapFrame::FullFrame { frame_type, offset_delta, number_of_locals, locals, number_of_stack_items, stack })
+
+            }
+            _ => Err(anyhow!("Invalid frame type in StackMapTable attribute in class file")), 
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum VerificationTypeInfo {
+    TopVariableInfo,
+    IntegerVariableInfo,
+    FloatVariableInfo,
+    LongVariableInfo,
+    DoubleVariableInfo,
+    NullVariableInfo,
+    UninitializedThisVariableInfo,
+    ObjectVariableInfo { cpool_index: u16 },
+    UninitializedVariableInfo { offset: u16 },
+}
+
+impl VerificationTypeInfo {
+    pub fn from_reader<R: BufRead>(buf_reader: &mut R) -> Result<Self> {
+        let mut tag_buf = [0; 1];
+        buf_reader.read_exact(&mut tag_buf)?;
+        let tag = u8::from_be_bytes(tag_buf);
+
+        match tag {
+            0 => Ok(VerificationTypeInfo::TopVariableInfo),
+            1 => Ok(VerificationTypeInfo::IntegerVariableInfo),
+            2 => Ok(VerificationTypeInfo::FloatVariableInfo),
+            3 => Ok(VerificationTypeInfo::LongVariableInfo),
+            4 => Ok(VerificationTypeInfo::DoubleVariableInfo),
+            5 => Ok(VerificationTypeInfo::NullVariableInfo),
+            6 => Ok(VerificationTypeInfo::UninitializedThisVariableInfo),
+            7 => {
+                let mut cpool_index_buf = [0; 2];
+                buf_reader.read_exact(&mut cpool_index_buf)?;
+                let cpool_index = u16::from_be_bytes(cpool_index_buf);
+                Ok(VerificationTypeInfo::ObjectVariableInfo { cpool_index })
+            }
+            8 => {
+                let mut offset_buf = [0; 2];
+                buf_reader.read_exact(&mut offset_buf)?;
+                let offset = u16::from_be_bytes(offset_buf);
+                Ok(VerificationTypeInfo::UninitializedVariableInfo { offset })
+            }
+            _ => Err(anyhow!("Invalid verification type info tag in class file")),
+        }
     }
 }
 
@@ -1379,6 +1502,7 @@ impl TypeAnnotation {
     
 }
 
+#[derive(Debug)]
 pub enum ElementValue {
     ConstValueIndex(u16),
     EnumConstValue { type_name_index: u16, const_name_index: u16 },
