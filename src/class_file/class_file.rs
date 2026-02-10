@@ -1,5 +1,6 @@
 use std::io::{BufRead, BufReader, Read};
 use bitflags::bitflags;
+use anyhow::{Result, anyhow};
 
 #[derive(Debug)]
 pub struct ClassFile {
@@ -22,7 +23,7 @@ pub struct ClassFile {
 }
 
 impl ClassFile {
-    pub fn from_reader<R: Read>(reader: R) -> Self {
+    pub fn from_reader<R: Read>(reader: R) -> Result<Self> {
         let mut buf_reader = BufReader::new(reader);
 
         // magic number
@@ -49,7 +50,7 @@ impl ClassFile {
         let mut constant_pool = Vec::with_capacity(constant_pool_count as usize);
 
         for _ in 0..constant_pool_count {
-            let cp_info = CpInfo::from_reader(&mut buf_reader);
+            let cp_info = CpInfo::from_reader(&mut buf_reader)?;
             constant_pool.push(cp_info);
         }
 
@@ -92,7 +93,7 @@ impl ClassFile {
         let mut fields = Vec::with_capacity(fields_count as usize);
 
         for _ in 0..fields_count {
-            let field_info = FieldInfo::from_reader(&mut buf_reader, &constant_pool);
+            let field_info = FieldInfo::from_reader(&mut buf_reader, &constant_pool)?;
             fields.push(field_info);
         }
 
@@ -105,7 +106,7 @@ impl ClassFile {
         let mut methods = Vec::with_capacity(methods_count as usize);
 
         for _ in 0..methods_count {
-            let method_info = MethodInfo::from_reader(&mut buf_reader, &constant_pool);
+            let method_info = MethodInfo::from_reader(&mut buf_reader, &constant_pool)?;
             methods.push(method_info);
         }
 
@@ -118,11 +119,11 @@ impl ClassFile {
         let mut attributes = Vec::with_capacity(attributes_count as usize);
 
         for _ in 0..attributes_count {
-            let attribute_info = AttributeInfo::from_reader(&mut buf_reader, &constant_pool);
+            let attribute_info = AttributeInfo::from_reader(&mut buf_reader, &constant_pool)?;
             attributes.push(attribute_info);
         }
 
-        ClassFile {
+        Ok(ClassFile {
             magic,
             minor_version,
             major_version,
@@ -139,7 +140,7 @@ impl ClassFile {
             methods,
             attributes_count,
             attributes,
-        }
+        })
     }
 
     fn ensure_class_file_validity(&self) {
@@ -223,178 +224,178 @@ pub enum CpInfo {
 
 
 impl CpInfo {
-    pub fn from_reader<R: BufRead>(buf_reader: &mut R) -> Self {
+    pub fn from_reader<R: BufRead>(buf_reader: &mut R) -> Result<Self> {
         let mut tag_buf = [0; 1];
-        buf_reader.read_exact(&mut tag_buf).expect("Failed to read constant pool tag from class file");
-        let tag = CpInfoTag::try_from(u8::from_be_bytes(tag_buf)).expect("Invalid constant pool tag");
+        buf_reader.read_exact(&mut tag_buf)?;
+        let tag = CpInfoTag::try_from(u8::from_be_bytes(tag_buf)).map(|t| t).map_err(|_| anyhow!("Invalid constant pool tag in class file: {}", tag_buf[0]))?;
 
         match tag {
             CpInfoTag::ConstantClass => {
                 let mut name_index_buf = [0; 2];
-                buf_reader.read_exact(&mut name_index_buf).expect("Failed to read name index for ConstantClass from class file");
+                buf_reader.read_exact(&mut name_index_buf)?;
                 let name_index = u16::from_be_bytes(name_index_buf);
-                CpInfo::ConstantClass { name_index }
+                Ok(CpInfo::ConstantClass { name_index })
             }
 
             CpInfoTag::ConstantFieldRef => {
                 let mut class_index_buf = [0; 2];
-                buf_reader.read_exact(&mut class_index_buf).expect("Failed to read class index for ConstantFieldRef from class file");
+                buf_reader.read_exact(&mut class_index_buf)?;
                 let class_index = u16::from_be_bytes(class_index_buf);
 
                 let mut name_and_type_index_buf = [0; 2];
-                buf_reader.read_exact(&mut name_and_type_index_buf).expect("Failed to read name and type index for ConstantFieldRef from class file");
+                buf_reader.read_exact(&mut name_and_type_index_buf)?;
                 let name_and_type_index = u16::from_be_bytes(name_and_type_index_buf);
 
-                CpInfo::ConstantFieldRef { class_index, name_and_type_index }
+                Ok(CpInfo::ConstantFieldRef { class_index, name_and_type_index })
             }
             CpInfoTag::ConstantMethodRef => {
                 let mut class_index_buf = [0; 2];
-                buf_reader.read_exact(&mut class_index_buf).expect("Failed to read class index for ConstantMethodRef from class file");
+                buf_reader.read_exact(&mut class_index_buf)?;
                 let class_index = u16::from_be_bytes(class_index_buf);
 
                 let mut name_and_type_index_buf = [0; 2];
-                buf_reader.read_exact(&mut name_and_type_index_buf).expect("Failed to read name and type index for ConstantMethodRef from class file");
+                buf_reader.read_exact(&mut name_and_type_index_buf)?;
                 let name_and_type_index = u16::from_be_bytes(name_and_type_index_buf);
 
-                CpInfo::ConstantMethodRef { class_index, name_and_type_index }
+                Ok(CpInfo::ConstantMethodRef { class_index, name_and_type_index })
             }
             CpInfoTag::ConstantInterfaceMethodRef => {
                 let mut class_index_buf = [0; 2];
-                buf_reader.read_exact(&mut class_index_buf).expect("Failed to read class index for ConstantInterfaceMethodRef from class file");
+                buf_reader.read_exact(&mut class_index_buf)?;
                 let class_index = u16::from_be_bytes(class_index_buf);
 
                 let mut name_and_type_index_buf = [0; 2];
-                buf_reader.read_exact(&mut name_and_type_index_buf).expect("Failed to read name and type index for ConstantInterfaceMethodRef from class file");
+                buf_reader.read_exact(&mut name_and_type_index_buf)?;
                 let name_and_type_index = u16::from_be_bytes(name_and_type_index_buf);
 
-                CpInfo::ConstantInterfaceMethodRef { class_index, name_and_type_index }
+                Ok(CpInfo::ConstantInterfaceMethodRef { class_index, name_and_type_index })
             }
 
             CpInfoTag::ConstantString => {
                 let mut string_index_buf = [0; 2];
-                buf_reader.read_exact(&mut string_index_buf).expect("Failed to read string index for ConstantString from class file");
+                buf_reader.read_exact(&mut string_index_buf)?;
                 let string_index = u16::from_be_bytes(string_index_buf);
-                CpInfo::ConstantString { string_index }
+                Ok(CpInfo::ConstantString { string_index })
             }
 
             CpInfoTag::ConstantInteger => {
                 let mut bytes_buf = [0; 4];
-                buf_reader.read_exact(&mut bytes_buf).expect("Failed to read bytes for ConstantInteger from class file");
+                buf_reader.read_exact(&mut bytes_buf)?;
                 let bytes = u32::from_be_bytes(bytes_buf);
-                CpInfo::ConstantInteger { bytes }
+                Ok(CpInfo::ConstantInteger { bytes })
             }
 
             CpInfoTag::ConstantFloat => {
                 let mut bytes_buf = [0; 4];
-                buf_reader.read_exact(&mut bytes_buf).expect("Failed to read bytes for ConstantFloat from class file");
+                buf_reader.read_exact(&mut bytes_buf)?;
                 let bytes = u32::from_be_bytes(bytes_buf);
-                CpInfo::ConstantFloat { bytes }
+                Ok(CpInfo::ConstantFloat { bytes })
             }
 
             CpInfoTag::ConstantLong => {
                 let mut high_bytes_buf = [0; 4];
-                buf_reader.read_exact(&mut high_bytes_buf).expect("Failed to read high bytes for ConstantLong from class file");
+                buf_reader.read_exact(&mut high_bytes_buf)?;
                 let high_bytes = u32::from_be_bytes(high_bytes_buf);
 
                 let mut low_bytes_buf = [0; 4];
-                buf_reader.read_exact(&mut low_bytes_buf).expect("Failed to read low bytes for ConstantLong from class file");
+                buf_reader.read_exact(&mut low_bytes_buf)?;
                 let low_bytes = u32::from_be_bytes(low_bytes_buf);
 
-                CpInfo::ConstantLong { high_bytes, low_bytes }
+                Ok(CpInfo::ConstantLong { high_bytes, low_bytes })
 
             }
 
             CpInfoTag::ConstantDouble => {
                 let mut high_bytes_buf = [0; 4];
-                buf_reader.read_exact(&mut high_bytes_buf).expect("Failed to read high bytes for ConstantDouble from class file");
+                buf_reader.read_exact(&mut high_bytes_buf)?;
                 let high_bytes = u32::from_be_bytes(high_bytes_buf);
 
                 let mut low_bytes_buf = [0; 4];
-                buf_reader.read_exact(&mut low_bytes_buf).expect("Failed to read low bytes for ConstantDouble from class file");
+                buf_reader.read_exact(&mut low_bytes_buf)?;
                 let low_bytes = u32::from_be_bytes(low_bytes_buf);
 
-                CpInfo::ConstantDouble { high_bytes, low_bytes }
+                Ok(CpInfo::ConstantDouble { high_bytes, low_bytes })
             }
 
             CpInfoTag::ConstantNameAndType => {
                 let mut name_index_buf = [0; 2];
-                buf_reader.read_exact(&mut name_index_buf).expect("Failed to read name index for ConstantNameAndType from class file");
+                buf_reader.read_exact(&mut name_index_buf)?;
                 let name_index = u16::from_be_bytes(name_index_buf);
 
                 let mut descriptor_index_buf = [0; 2];
-                buf_reader.read_exact(&mut descriptor_index_buf).expect("Failed to read descriptor index for ConstantNameAndType from class file");
+                buf_reader.read_exact(&mut descriptor_index_buf)?;
                 let descriptor_index = u16::from_be_bytes(descriptor_index_buf);
 
-                CpInfo::ConstantNameAndType { name_index, descriptor_index }
+                Ok(CpInfo::ConstantNameAndType { name_index, descriptor_index })
             }
 
             CpInfoTag::ConstantUtf8 => {
                 let mut length_buf = [0; 2];
-                buf_reader.read_exact(&mut length_buf).expect("Failed to read length for ConstantUtf8 from class file");
+                buf_reader.read_exact(&mut length_buf)?;
                 let length = u16::from_be_bytes(length_buf);
 
                 let mut bytes = vec![0; length as usize];
-                buf_reader.read_exact(&mut bytes).expect("Failed to read bytes for ConstantUtf8 from class file");
+                buf_reader.read_exact(&mut bytes)?;
 
-                CpInfo::ConstantUtf8 { length, bytes }
+                Ok(CpInfo::ConstantUtf8 { length, bytes })
             }
 
             CpInfoTag::ConstantMethodHandle => {
                 let mut reference_kind_buf = [0; 1];
-                buf_reader.read_exact(&mut reference_kind_buf).expect("Failed to read reference kind for ConstantMethodHandle from class file");
+                buf_reader.read_exact(&mut reference_kind_buf)?;
                 let reference_kind = u8::from_be_bytes(reference_kind_buf);
 
                 let mut reference_index_buf = [0; 2];
-                buf_reader.read_exact(&mut reference_index_buf).expect("Failed to read reference index for ConstantMethodHandle from class file");
+                buf_reader.read_exact(&mut reference_index_buf)?;
                 let reference_index = u16::from_be_bytes(reference_index_buf);
 
-                CpInfo::ConstantMethodHandle { reference_kind, reference_index }
+                Ok(CpInfo::ConstantMethodHandle { reference_kind, reference_index })
             }
 
             CpInfoTag::ConstantMethodType => {
                 let mut descriptor_index_buf = [0; 2];
-                buf_reader.read_exact(&mut descriptor_index_buf).expect("Failed to read descriptor index for ConstantMethodType from class file");
+                buf_reader.read_exact(&mut descriptor_index_buf)?;
                 let descriptor_index = u16::from_be_bytes(descriptor_index_buf);
 
-                CpInfo::ConstantMethodType { descriptor_index }
+                Ok(CpInfo::ConstantMethodType { descriptor_index })
             }
 
             CpInfoTag::ConstantDynamic => {
                 let mut bootstrap_method_attr_index_buf = [0; 2];
-                buf_reader.read_exact(&mut bootstrap_method_attr_index_buf).expect("Failed to read bootstrap method attribute index for ConstantDynamic from class file");
+                buf_reader.read_exact(&mut bootstrap_method_attr_index_buf)?;
                 let bootstrap_method_attr_index = u16::from_be_bytes(bootstrap_method_attr_index_buf);
 
                 let mut name_and_type_index_buf = [0; 2];
-                buf_reader.read_exact(&mut name_and_type_index_buf).expect("Failed to read name and type index for ConstantDynamic from class file");
+                buf_reader.read_exact(&mut name_and_type_index_buf)?;
                 let name_and_type_index = u16::from_be_bytes(name_and_type_index_buf);
 
-                CpInfo::ConstantDynamic { bootstrap_method_attr_index, name_and_type_index }
+                Ok(CpInfo::ConstantDynamic { bootstrap_method_attr_index, name_and_type_index })
             }
 
             CpInfoTag::ConstantInvokeDynamic => {
                 let mut bootstrap_method_attr_index_buf = [0; 2];
-                buf_reader.read_exact(&mut bootstrap_method_attr_index_buf).expect("Failed to read bootstrap method attribute index for ConstantInvokeDynamic from class file");
+                buf_reader.read_exact(&mut bootstrap_method_attr_index_buf)?;
                 let bootstrap_method_attr_index = u16::from_be_bytes(bootstrap_method_attr_index_buf);
 
                 let mut name_and_type_index_buf = [0; 2];
-                buf_reader.read_exact(&mut name_and_type_index_buf).expect("Failed to read name and type index for ConstantInvokeDynamic from class file");
+                buf_reader.read_exact(&mut name_and_type_index_buf)?;
                 let name_and_type_index = u16::from_be_bytes(name_and_type_index_buf);
 
-                CpInfo::ConstantInvokeDynamic { bootstrap_method_attr_index, name_and_type_index }
+                Ok(CpInfo::ConstantInvokeDynamic { bootstrap_method_attr_index, name_and_type_index })
             }
 
             CpInfoTag::ConstantModule => {
                 let mut name_index_buf = [0; 2];
-                buf_reader.read_exact(&mut name_index_buf).expect("Failed to read name index for ConstantModule from class file");
+                buf_reader.read_exact(&mut name_index_buf)?;
                 let name_index = u16::from_be_bytes(name_index_buf);
-                CpInfo::ConstantModule { name_index }
+                Ok(CpInfo::ConstantModule { name_index })
             }
 
             CpInfoTag::ConstantPackage => {
                 let mut name_index_buf = [0; 2];
-                buf_reader.read_exact(&mut name_index_buf).expect("Failed to read name index for ConstantPackage from class file");
+                buf_reader.read_exact(&mut name_index_buf)?;
                 let name_index = u16::from_be_bytes(name_index_buf);
-                CpInfo::ConstantPackage { name_index }
+                Ok(CpInfo::ConstantPackage { name_index })
             }
         }
     }
@@ -424,43 +425,46 @@ pub struct FieldInfo {
 }
 
 impl FieldInfo {
-    pub fn from_reader<R: BufRead>(buf_reader: &mut R, constant_pool_entries: &Vec<CpInfo>) -> Self {
+    pub fn from_reader<R: BufRead>(buf_reader: &mut R, constant_pool_entries: &Vec<CpInfo>) -> Result<Self> {
 
         // access flags
         let mut access_flags_buf = [0; 2];
-        buf_reader.read_exact(&mut access_flags_buf).expect("Failed to read field access flags from class file");
-        let access_flags = FieldInfoAccessFlags::try_from(u16::from_be_bytes(access_flags_buf)).expect("Invalid field access flags in class file");
+        buf_reader.read_exact(&mut access_flags_buf)?;
+        let access_flags = FieldInfoAccessFlags::try_from(u16::from_be_bytes(access_flags_buf));
+        if access_flags.is_err() {
+            return Err(anyhow!("Invalid field access flags in class file"));
+        }
 
         // name index
         let mut name_index_buf = [0; 2];
-        buf_reader.read_exact(&mut name_index_buf).expect("Failed to read field name index from class file");
+        buf_reader.read_exact(&mut name_index_buf)?;
         let name_index = u16::from_be_bytes(name_index_buf);
 
         // descriptor index
         let mut descriptor_index_buf = [0; 2];
-        buf_reader.read_exact(&mut descriptor_index_buf).expect("Failed to read field descriptor index from class file");
+        buf_reader.read_exact(&mut descriptor_index_buf)?;
         let descriptor_index = u16::from_be_bytes(descriptor_index_buf);
 
         // attributes count
         let mut attributes_count_buf = [0; 2];
-        buf_reader.read_exact(&mut attributes_count_buf).expect("Failed to read field attributes count from class file");
+        buf_reader.read_exact(&mut attributes_count_buf)?;
         let attributes_count = u16::from_be_bytes(attributes_count_buf);
 
         // attributes
         let mut attributes = Vec::with_capacity(attributes_count as usize);
 
         for _ in 0..attributes_count {
-            let attribute_info = AttributeInfo::from_reader(buf_reader, constant_pool_entries);
+            let attribute_info = AttributeInfo::from_reader(buf_reader, constant_pool_entries)?;
             attributes.push(attribute_info);
         }
 
-        FieldInfo {
-            access_flags,
+        Ok(FieldInfo {
+            access_flags: access_flags.unwrap(),
             name_index,
             descriptor_index,
             attributes_count,
             attributes,
-        }
+        })
     }
 }
 
@@ -506,43 +510,46 @@ pub struct MethodInfo {
 }
 
 impl MethodInfo {
-    pub fn from_reader<R: BufRead>(buf_reader: &mut R, constant_pool_info: &Vec<CpInfo>) -> Self {
+    pub fn from_reader<R: BufRead>(buf_reader: &mut R, constant_pool_info: &Vec<CpInfo>) -> Result<Self> {
 
         // access flags
         let mut access_flags_buf = [0; 2];
-        buf_reader.read_exact(&mut access_flags_buf).expect("Failed to read method access flags from class file");
-        let access_flags = MethodAccessFlags::from_bits(u16::from_be_bytes(access_flags_buf)).expect("Invalid method access flags in class file");
+        buf_reader.read_exact(&mut access_flags_buf)?;
+        let access_flags = MethodAccessFlags::from_bits(u16::from_be_bytes(access_flags_buf));
+        if access_flags.is_none() {
+            return Err(anyhow!("Invalid method access flags in class file"));
+        }
 
         // name index
         let mut name_index_buf = [0; 2];
-        buf_reader.read_exact(&mut name_index_buf).expect("Failed to read method name index from class file");
+        buf_reader.read_exact(&mut name_index_buf)?;
         let name_index = u16::from_be_bytes(name_index_buf);
 
         // descriptor index
         let mut descriptor_index_buf = [0; 2];
-        buf_reader.read_exact(&mut descriptor_index_buf).expect("Failed to read method descriptor index from class file");
+        buf_reader.read_exact(&mut descriptor_index_buf)?;
         let descriptor_index = u16::from_be_bytes(descriptor_index_buf);
 
         // attributes count
         let mut attributes_count_buf = [0; 2];
-        buf_reader.read_exact(&mut attributes_count_buf).expect("Failed to read method attributes count from class file");
+        buf_reader.read_exact(&mut attributes_count_buf)?;
         let attributes_count = u16::from_be_bytes(attributes_count_buf);
 
         // attributes
         let mut attributes = Vec::with_capacity(attributes_count as usize);
 
         for _ in 0..attributes_count {
-            let attribute_info = AttributeInfo::from_reader(buf_reader, &constant_pool_info);
+            let attribute_info = AttributeInfo::from_reader(buf_reader, &constant_pool_info)?;
             attributes.push(attribute_info);
         }
 
-        MethodInfo {
-            access_flags,
+        Ok(MethodInfo {
+            access_flags: access_flags.unwrap(),
             name_index,
             descriptor_index,
             attributes_count,
             attributes,
-        }
+        })
     }
 }
 
@@ -608,9 +615,9 @@ bitflags! {
 }
 
 impl AttributeInfo {
-    pub fn from_reader<R: BufRead>(buf_reader: &mut R, constant_pool_info: &Vec<CpInfo>) -> Self {
+    pub fn from_reader<R: BufRead>(buf_reader: &mut R, constant_pool_info: &Vec<CpInfo>) -> Result<Self> {
         let mut attribute_name_index_buf = [0; 2];
-        buf_reader.read_exact(&mut attribute_name_index_buf).expect("Failed to read attribute name index from class file");
+        buf_reader.read_exact(&mut attribute_name_index_buf)?;
         let attribute_name_index = u16::from_be_bytes(attribute_name_index_buf);
         let attribute_name = match &constant_pool_info[attribute_name_index as usize - 1] {
             CpInfo::ConstantUtf8 { length: _, bytes } => String::from_utf8(bytes.clone()).expect("Invalid UTF-8 in attribute name in class file"),
@@ -618,15 +625,15 @@ impl AttributeInfo {
         };
 
         let mut attribute_length_buf = [0; 4];
-        buf_reader.read_exact(&mut attribute_length_buf).expect("Failed to read attribute length from class file");
+        buf_reader.read_exact(&mut attribute_length_buf)?;
         let attribute_length = u32::from_be_bytes(attribute_length_buf);
 
         match attribute_name.as_str() {
             "ConstantValue" => {
                 let mut constant_value_index_buf = [0; 2];
-                buf_reader.read_exact(&mut constant_value_index_buf).expect("Failed to read constant value index for ConstantValue attribute from class file");
+                buf_reader.read_exact(&mut constant_value_index_buf)?;
                 let constant_value_index = u16::from_be_bytes(constant_value_index_buf);
-                AttributeInfo::ConstantValue { constant_value_index }
+                Ok(AttributeInfo::ConstantValue { constant_value_index })
             }
 
             "Code" => {
@@ -651,7 +658,7 @@ impl AttributeInfo {
 
                 let mut exception_table = Vec::with_capacity(exception_table_length as usize);
                 for _ in 0..exception_table_length {
-                    let entry = ExceptionTableEntry::from_reader(buf_reader);
+                    let entry = ExceptionTableEntry::from_reader(buf_reader)?;
                     exception_table.push(entry);
                 }
 
@@ -661,11 +668,20 @@ impl AttributeInfo {
 
                 let mut attributes = Vec::with_capacity(attributes_count as usize);
                 for _ in 0..attributes_count {
-                    let attribute_info = AttributeInfo::from_reader(buf_reader, constant_pool_info);
+                    let attribute_info = AttributeInfo::from_reader(buf_reader, constant_pool_info)?;
                     attributes.push(attribute_info);
                 }
 
-                AttributeInfo::Code { max_stack, max_locals, code_length, code, exception_table_length, exception_table, attributes_count, attributes }
+                Ok(AttributeInfo::Code { 
+                    max_stack, 
+                    max_locals, 
+                    code_length, 
+                    code, 
+                    exception_table_length, 
+                    exception_table: exception_table, 
+                    attributes_count, 
+                    attributes 
+                })
             }
 
             "StackMapTable" => {
@@ -679,7 +695,7 @@ impl AttributeInfo {
                     entries.push(entry);
                 }
 
-                AttributeInfo::StackMapTable { number_of_entries, entries }
+                Ok(AttributeInfo::StackMapTable { number_of_entries, entries })
             }
 
             "Exceptions" => {
@@ -695,7 +711,7 @@ impl AttributeInfo {
                     exception_index_table.push(exception_index);
                 }
 
-                AttributeInfo::Exceptions { number_of_exceptions, exception_index_table }
+                Ok(AttributeInfo::Exceptions { number_of_exceptions, exception_index_table })
             }
 
             "InnerClasses" => {
@@ -705,45 +721,45 @@ impl AttributeInfo {
 
                 let mut classes = Vec::with_capacity(number_of_classes as usize);
                 for _ in 0..number_of_classes {
-                    let class_info = InnerClassInfo::from_reader(buf_reader);
+                    let class_info = InnerClassInfo::from_reader(buf_reader)?;
                     classes.push(class_info);
                 }
 
-                AttributeInfo::InnerClasses { number_of_classes, classes }
+                Ok(AttributeInfo::InnerClasses { number_of_classes, classes })
             }
 
             "EnclosingMethod" => {
                 let mut class_index_buf = [0; 2];
-                buf_reader.read_exact(&mut class_index_buf).expect("Failed to read class index for EnclosingMethod attribute from class file");
+                buf_reader.read_exact(&mut class_index_buf)?;
                 let class_index = u16::from_be_bytes(class_index_buf);
 
                 let mut method_index_buf = [0; 2];
-                buf_reader.read_exact(&mut method_index_buf).expect("Failed to read method index for EnclosingMethod attribute from class file");
+                buf_reader.read_exact(&mut method_index_buf)?;
                 let method_index = u16::from_be_bytes(method_index_buf);
 
-                AttributeInfo::EnclosingMethod { class_index, method_index }
+                Ok(AttributeInfo::EnclosingMethod { class_index, method_index })
             }
 
-            "Synthetic" => AttributeInfo::Synthetic,
+            "Synthetic" => Ok(AttributeInfo::Synthetic),
 
             "Signature" => {
                 let mut signature_index_buf = [0; 2];
-                buf_reader.read_exact(&mut signature_index_buf).expect("Failed to read signature index for Signature attribute from class file");
+                buf_reader.read_exact(&mut signature_index_buf)?;
                 let signature_index = u16::from_be_bytes(signature_index_buf);
-                AttributeInfo::Signature { signature_index }
+                Ok(AttributeInfo::Signature { signature_index })
             }
 
             "SourceFile" => {
                 let mut sourcefile_index_buf = [0; 2];
-                buf_reader.read_exact(&mut sourcefile_index_buf).expect("Failed to read source file index for SourceFile attribute from class file");
+                buf_reader.read_exact(&mut sourcefile_index_buf)?;
                 let sourcefile_index = u16::from_be_bytes(sourcefile_index_buf);
-                AttributeInfo::SourceFile { sourcefile_index }
+                Ok(AttributeInfo::SourceFile { sourcefile_index })
             }
 
             "SourceDebugExtension" => {
                 let mut debug_extension = vec![0; attribute_length as usize];
-                buf_reader.read_exact(&mut debug_extension).expect("Failed to read debug extension for SourceDebugExtension attribute from class file");
-                AttributeInfo::SourceDebugExtension { debug_extension }
+                buf_reader.read_exact(&mut debug_extension)?;
+                Ok(AttributeInfo::SourceDebugExtension { debug_extension })
             }
 
             "LineNumberTable" => {
@@ -753,11 +769,11 @@ impl AttributeInfo {
 
                 let mut line_number_table = Vec::with_capacity(line_number_table_length as usize);
                 for _ in 0..line_number_table_length {
-                    let entry = LineNumberInfo::from_reader(buf_reader);
+                    let entry = LineNumberInfo::from_reader(buf_reader)?;
                     line_number_table.push(entry);
                 }
 
-                AttributeInfo::LineNumberTable { line_number_table_length, line_number_table }
+                Ok(AttributeInfo::LineNumberTable { line_number_table_length, line_number_table })
             }
 
             "LocalVariableTable" => {
@@ -767,11 +783,11 @@ impl AttributeInfo {
 
                 let mut local_variable_table = Vec::with_capacity(local_variable_table_length as usize);
                 for _ in 0..local_variable_table_length {
-                    let entry = LocalVariableInfo::from_reader(buf_reader);
+                    let entry = LocalVariableInfo::from_reader(buf_reader)?;
                     local_variable_table.push(entry);
                 }
 
-                AttributeInfo::LocalVariableTable { local_variable_table_length, local_variable_table }
+                Ok(AttributeInfo::LocalVariableTable { local_variable_table_length, local_variable_table })
             }
 
             "LocalVariableTypeTable" => {
@@ -781,41 +797,41 @@ impl AttributeInfo {
 
                 let mut local_variable_type_table = Vec::with_capacity(local_variable_type_table_length as usize);
                 for _ in 0..local_variable_type_table_length {
-                    let entry = LocalVariableTypeInfo::from_reader(buf_reader);
+                    let entry = LocalVariableTypeInfo::from_reader(buf_reader)?;
                     local_variable_type_table.push(entry);
                 }
 
-                AttributeInfo::LocalVariableTypeTable { local_variable_type_table_length, local_variable_type_table }
+                Ok(AttributeInfo::LocalVariableTypeTable { local_variable_type_table_length, local_variable_type_table })
             }
 
-            "Deprecated" => AttributeInfo::Deprecated,
+            "Deprecated" => Ok(AttributeInfo::Deprecated),
 
             "RuntimeVisibleAnnotations" => {
                 let mut num_annotations_buf = [0; 2];
-                buf_reader.read_exact(&mut num_annotations_buf).expect("Failed to read number of annotations for RuntimeVisibleAnnotations attribute from class file");
+                buf_reader.read_exact(&mut num_annotations_buf)?;
                 let num_annotations = u16::from_be_bytes(num_annotations_buf);
 
                 let mut annotations = Vec::with_capacity(num_annotations as usize);
                 for _ in 0..num_annotations {
-                    let annotation = Annotation::from_reader(buf_reader);
+                    let annotation = Annotation::from_reader(buf_reader)?;
                     annotations.push(annotation);
                 }
 
-                AttributeInfo::RuntimeVisibleAnnotations { num_annotations, annotations }
+                Ok(AttributeInfo::RuntimeVisibleAnnotations { num_annotations, annotations })
             }
 
             "RuntimeInvisibleAnnotations" => {
                 let mut num_annotations_buf = [0; 2];
-                buf_reader.read_exact(&mut num_annotations_buf).expect("Failed to read number of annotations for RuntimeInvisibleAnnotations attribute from class file");
+                buf_reader.read_exact(&mut num_annotations_buf)?;
                 let num_annotations = u16::from_be_bytes(num_annotations_buf);
 
                 let mut annotations = Vec::with_capacity(num_annotations as usize);
                 for _ in 0..num_annotations {
-                    let annotation = Annotation::from_reader(buf_reader);
+                    let annotation = Annotation::from_reader(buf_reader)?;
                     annotations.push(annotation);
                 }
 
-                AttributeInfo::RuntimeInvisibleAnnotations { num_annotations, annotations }
+                Ok(AttributeInfo::RuntimeInvisibleAnnotations { num_annotations, annotations })
             }
 
             "RuntimeVisibleParameterAnnotations" => {
@@ -825,11 +841,11 @@ impl AttributeInfo {
 
                 let mut parameter_annotations = Vec::with_capacity(num_parameters as usize);
                 for _ in 0..num_parameters {
-                    let parameter_annotation = ParameterAnnotations::from_reader(buf_reader);
+                    let parameter_annotation = ParameterAnnotations::from_reader(buf_reader)?;
                     parameter_annotations.push(parameter_annotation);
                 }
 
-                AttributeInfo::RuntimeVisibleParameterAnnotations { num_parameters, parameter_annotations }
+                Ok(AttributeInfo::RuntimeVisibleParameterAnnotations { num_parameters, parameter_annotations })
             }
 
             "RuntimeInvisibleParameterAnnotations" => {
@@ -839,25 +855,25 @@ impl AttributeInfo {
 
                 let mut parameter_annotations = Vec::with_capacity(num_parameters as usize);
                 for _ in 0..num_parameters {
-                    let parameter_annotation = ParameterAnnotations::from_reader(buf_reader);
+                    let parameter_annotation = ParameterAnnotations::from_reader(buf_reader)?;
                     parameter_annotations.push(parameter_annotation);
                 }
 
-                AttributeInfo::RuntimeInvisibleParameterAnnotations { num_parameters, parameter_annotations }
+                Ok(AttributeInfo::RuntimeInvisibleParameterAnnotations { num_parameters, parameter_annotations })
             }
 
             "RuntimeVisibleTypeAnnotations" => {
                 let mut num_annotations_buf = [0; 2];
-                buf_reader.read_exact(&mut num_annotations_buf).expect("Failed to read number of annotations for RuntimeVisibleTypeAnnotations attribute from class file");
+                buf_reader.read_exact(&mut num_annotations_buf)?;
                 let num_annotations = u16::from_be_bytes(num_annotations_buf);
 
                 let mut annotations = Vec::with_capacity(num_annotations as usize);
                 for _ in 0..num_annotations {
-                    let annotation = TypeAnnotation::from_reader(buf_reader);
+                    let annotation = TypeAnnotation::from_reader(buf_reader)?;
                     annotations.push(annotation);
                 }
 
-                AttributeInfo::RuntimeVisibleTypeAnnotations { num_annotations, annotations }
+                Ok(AttributeInfo::RuntimeVisibleTypeAnnotations { num_annotations, annotations })
             }
 
             "RuntimeInvisibleTypeAnnotations" => {
@@ -867,188 +883,202 @@ impl AttributeInfo {
 
                 let mut annotations = Vec::with_capacity(num_annotations as usize);
                 for _ in 0..num_annotations {
-                    let annotation = TypeAnnotation::from_reader(buf_reader);
+                    let annotation = TypeAnnotation::from_reader(buf_reader)?;
                     annotations.push(annotation);
                 }
 
-                AttributeInfo::RuntimeInvisibleTypeAnnotations { num_annotations, annotations }
+                Ok(AttributeInfo::RuntimeInvisibleTypeAnnotations { num_annotations, annotations })
             }
 
             "AnnotationDefault" => {
-                let default_value = ElementValue::from_reader(buf_reader);
-                AttributeInfo::AnnotationDefault { default_value }
+                let default_value = ElementValue::from_reader(buf_reader)?;
+                Ok(AttributeInfo::AnnotationDefault { default_value })
             }
 
             "BootstrapMethods" => {
                 let mut num_bootstrap_methods_buf = [0; 2];
-                buf_reader.read_exact(&mut num_bootstrap_methods_buf).expect("Failed to read number of bootstrap methods for BootstrapMethods attribute from class file");
+                buf_reader.read_exact(&mut num_bootstrap_methods_buf)?;
                 let num_bootstrap_methods = u16::from_be_bytes(num_bootstrap_methods_buf);
 
                 let mut bootstrap_methods = Vec::with_capacity(num_bootstrap_methods as usize);
                 for _ in 0..num_bootstrap_methods {
-                    let bootstrap_method = BootstrapMethod::from_reader(buf_reader);
+                    let bootstrap_method = BootstrapMethod::from_reader(buf_reader)?;
                     bootstrap_methods.push(bootstrap_method);
                 }
 
-                AttributeInfo::BootstrapMethods { num_bootstrap_methods, bootstrap_methods }
+                Ok(AttributeInfo::BootstrapMethods { num_bootstrap_methods, bootstrap_methods })
             }
 
             "MethodParameters" => {
                 let mut parameters_count_buf = [0; 1];
-                buf_reader.read_exact(&mut parameters_count_buf).expect("Failed to read parameters count for MethodParameters attribute from class file");
+                buf_reader.read_exact(&mut parameters_count_buf)?;
                 let parameters_count = u8::from_be_bytes(parameters_count_buf);
 
                 let mut parameters = Vec::with_capacity(parameters_count as usize);
                 for _ in 0..parameters_count {
-                    let parameter = MethodParameter::from_reader(buf_reader);
+                    let parameter = MethodParameter::from_reader(buf_reader)?;
                     parameters.push(parameter);
                 }
 
-                AttributeInfo::MethodParameters { parameters_count, parameters }
+                Ok(AttributeInfo::MethodParameters { parameters_count, parameters })
             }
 
             "Module" => {
                 let mut module_name_index_buf = [0; 2];
-                buf_reader.read_exact(&mut module_name_index_buf).expect("Failed to read module name index for Module attribute from class file");
+                buf_reader.read_exact(&mut module_name_index_buf)?;
                 let module_name_index = u16::from_be_bytes(module_name_index_buf);
 
                 let mut module_flags_buf = [0; 2];
-                buf_reader.read_exact(&mut module_flags_buf).expect("Failed to read module flags for Module attribute from class file");
+                buf_reader.read_exact(&mut module_flags_buf)?;
                 let module_flags = ModuleFlags::from_bits(u16::from_be_bytes(module_flags_buf)).expect("Invalid module flags in class file");
 
                 let mut module_version_index_buf = [0; 2];
-                buf_reader.read_exact(&mut module_version_index_buf).expect("Failed to read module version index for Module attribute from class file");
+                buf_reader.read_exact(&mut module_version_index_buf)?;
                 let module_version_index = u16::from_be_bytes(module_version_index_buf);
 
                 let mut requires_count_buf = [0; 2];
-                buf_reader.read_exact(&mut requires_count_buf).expect("Failed to read requires count for Module attribute from class file");
+                buf_reader.read_exact(&mut requires_count_buf)?;
                 let requires_count = u16::from_be_bytes(requires_count_buf);
 
                 let mut requires = Vec::with_capacity(requires_count as usize);
                 for _ in 0..requires_count {
-                    let require = ModuleRequire::from_reader(buf_reader);
+                    let require = ModuleRequire::from_reader(buf_reader)?;
                     requires.push(require);
                 }
 
                 let mut exports_count_buf = [0; 2];
-                buf_reader.read_exact(&mut exports_count_buf).expect("Failed to read exports count for Module attribute from class file");
+                buf_reader.read_exact(&mut exports_count_buf)?;
                 let exports_count = u16::from_be_bytes(exports_count_buf);
 
                 let mut exports = Vec::with_capacity(exports_count as usize);
                 for _ in 0..exports_count {
-                    let export = ModuleExport::from_reader(buf_reader);
+                    let export = ModuleExport::from_reader(buf_reader)?;
                     exports.push(export);
                 }
 
                 let mut opens_count_buf = [0; 2];
-                buf_reader.read_exact(&mut opens_count_buf).expect("Failed to read opens count for Module attribute from class file");
+                buf_reader.read_exact(&mut opens_count_buf)?;
                 let opens_count = u16::from_be_bytes(opens_count_buf);
 
                 let mut opens = Vec::with_capacity(opens_count as usize);
                 for _ in 0..opens_count {
-                    let open = ModuleOpen::from_reader(buf_reader);
+                    let open = ModuleOpen::from_reader(buf_reader)?;
                     opens.push(open);
                 }
 
                 let mut uses_count_buf = [0; 2];
-                buf_reader.read_exact(&mut uses_count_buf).expect("Failed to read uses count for Module attribute from class file");
+                buf_reader.read_exact(&mut uses_count_buf)?;
                 let uses_count = u16::from_be_bytes(uses_count_buf);
 
                 let mut uses_index = Vec::with_capacity(uses_count as usize);
                 for _ in 0..uses_count {
                     let mut use_index_buf = [0; 2];
-                    buf_reader.read_exact(&mut use_index_buf).expect("Failed to read uses index for Module attribute from class file");
+                    buf_reader.read_exact(&mut use_index_buf)?;
                     let use_index = u16::from_be_bytes(use_index_buf);
                     uses_index.push(use_index);
                 }
 
                 let mut provides_count_buf = [0; 2];
-                buf_reader.read_exact(&mut provides_count_buf).expect("Failed to read provides count for Module attribute from class file");
+                buf_reader.read_exact(&mut provides_count_buf)?;
                 let provides_count = u16::from_be_bytes(provides_count_buf);
 
                 let mut provides = Vec::with_capacity(provides_count as usize);
                 for _ in 0..provides_count {
-                    let provide = ModuleProvide::from_reader(buf_reader);
+                    let provide = ModuleProvide::from_reader(buf_reader)?;
                     provides.push(provide);
                 }
 
-                AttributeInfo::Module { module_name_index, module_flags, module_version_index, requires_count, requires, exports_count, exports, opens_count, opens, uses_count, uses_index, provides_count, provides }
+                Ok(AttributeInfo::Module { 
+                    module_name_index, 
+                    module_flags, 
+                    module_version_index, 
+                    requires_count, 
+                    requires, 
+                    exports_count, 
+                    exports, 
+                    opens_count, 
+                    opens, 
+                    uses_count, 
+                    uses_index, 
+                    provides_count, 
+                    provides 
+                })
             }
 
             "ModulePackages" => {
                 let mut package_count_buf = [0; 2];
-                buf_reader.read_exact(&mut package_count_buf).expect("Failed to read package count for ModulePackages attribute from class file");
+                buf_reader.read_exact(&mut package_count_buf)?;
                 let package_count = u16::from_be_bytes(package_count_buf);
 
                 let mut package_index = Vec::with_capacity(package_count as usize);
                 for _ in 0..package_count {
                     let mut package_index_buf = [0; 2];
-                    buf_reader.read_exact(&mut package_index_buf).expect("Failed to read package index for ModulePackages attribute from class file");
+                    buf_reader.read_exact(&mut package_index_buf)?;
                     let package_index_entry = u16::from_be_bytes(package_index_buf);
                     package_index.push(package_index_entry);
                 }
 
-                AttributeInfo::ModulePackages { package_count, package_index }
+                Ok(AttributeInfo::ModulePackages { package_count, package_index })
             }
 
             "ModuleMainClass" => {
                 let mut main_class_index_buf = [0; 2];
-                buf_reader.read_exact(&mut main_class_index_buf).expect("Failed to read main class index for ModuleMainClass attribute from class file");
+                buf_reader.read_exact(&mut main_class_index_buf)?;
                 let main_class_index = u16::from_be_bytes(main_class_index_buf);
-                AttributeInfo::ModuleMainClass { main_class_index }
+                Ok(AttributeInfo::ModuleMainClass { main_class_index })
             }
 
             "NestHost" => {
                 let mut host_class_index_buf = [0; 2];
-                buf_reader.read_exact(&mut host_class_index_buf).expect("Failed to read host class index for NestHost attribute from class file");
+                buf_reader.read_exact(&mut host_class_index_buf)?;
                 let host_class_index = u16::from_be_bytes(host_class_index_buf);
-                AttributeInfo::NestHost { host_class_index }
+                Ok(AttributeInfo::NestHost { host_class_index })
             }
 
             "NestMembers" => {
                 let mut number_of_classes_buf = [0; 2];
-                buf_reader.read_exact(&mut number_of_classes_buf).expect("Failed to read number of classes for NestMembers attribute from class file");
+                buf_reader.read_exact(&mut number_of_classes_buf)?;
                 let number_of_classes = u16::from_be_bytes(number_of_classes_buf);
 
                 let mut classes = Vec::with_capacity(number_of_classes as usize);
                 for _ in 0..number_of_classes {
                     let mut class_index_buf = [0; 2];
-                    buf_reader.read_exact(&mut class_index_buf).expect("Failed to read class index for NestMembers attribute from class file");
+                    buf_reader.read_exact(&mut class_index_buf)?;
                     let class_index = u16::from_be_bytes(class_index_buf);
                     classes.push(class_index);
                 }
 
-                AttributeInfo::NestMembers { number_of_classes, classes }
+                Ok(AttributeInfo::NestMembers { number_of_classes, classes })
             }
 
             "Record" => {
                 let mut number_of_components_buf = [0; 2];
-                buf_reader.read_exact(&mut number_of_components_buf).expect("Failed to read number of components for Record attribute from class file");
+                buf_reader.read_exact(&mut number_of_components_buf)?;
                 let number_of_components = u16::from_be_bytes(number_of_components_buf);
 
                 let mut components = Vec::with_capacity(number_of_components as usize);
                 for _ in 0..number_of_components {
-                    let component = RecordComponentInfo::from_reader(buf_reader, constant_pool_info);
+                    let component = RecordComponentInfo::from_reader(buf_reader, constant_pool_info)?;
                     components.push(component);
                 }
 
-                AttributeInfo::Record { number_of_components, components }
+                Ok(AttributeInfo::Record { number_of_components, components })
             }
 
             "PermittedSubclasses" => {
                 let mut number_of_classes_buf = [0; 2];
-                buf_reader.read_exact(&mut number_of_classes_buf).expect("Failed to read number of classes for PermittedSubclasses attribute from class file");
+                buf_reader.read_exact(&mut number_of_classes_buf)?;
                 let number_of_classes = u16::from_be_bytes(number_of_classes_buf);
 
                 let mut classes = Vec::with_capacity(number_of_classes as usize);
                 for _ in 0..number_of_classes {
                     let mut class_index_buf = [0; 2];
-                    buf_reader.read_exact(&mut class_index_buf).expect("Failed to read class index for PermittedSubclasses attribute from class file");
+                    buf_reader.read_exact(&mut class_index_buf)?;
                     let class_index = u16::from_be_bytes(class_index_buf);
                     classes.push(class_index);
                 }
 
-                AttributeInfo::PermittedSubclasses { number_of_classes, classes }
+                Ok(AttributeInfo::PermittedSubclasses { number_of_classes, classes })
             }
 
 
@@ -1056,63 +1086,6 @@ impl AttributeInfo {
             _ => panic!("Unsupported attribute name '{}' in class file this shouldnt be a panic see 4.7.2", attribute_name),   
         }
 
-    }
-}
-
-pub enum AttributeInfoType {
-    ConstantValue,
-    Code,
-    StackMapTable,
-    Exceptions,
-    InnerClasses,
-    EnclosingMethod,
-    Synthetic,
-    Signature,
-    SourceFile,
-    SourceDebugExtension,
-    LineNumberTable,
-    LocalVariableTable,
-    LocalVariableTypeTable,
-    Deprecated,
-    RuntimeVisibleAnnotations,
-    RuntimeInvisibleAnnotations,
-    RuntimeVisibleParameterAnnotations,
-    RuntimeInvisibleParameterAnnotations,
-    RuntimeVisibleTypeAnnotations,
-    RuntimeInvisibleTypeAnnotations,
-    AnnotationDefault,
-    BootstrapMethods,
-}
-
-impl TryFrom<&str> for AttributeInfoType {
-    type Error = ();
-
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        match value {
-            "ConstantValue" => Ok(AttributeInfoType::ConstantValue),
-            "Code" => Ok(AttributeInfoType::Code),
-            "StackMapTable" => Ok(AttributeInfoType::StackMapTable),
-            "Exceptions" => Ok(AttributeInfoType::Exceptions),
-            "InnerClasses" => Ok(AttributeInfoType::InnerClasses),
-            "EnclosingMethod" => Ok(AttributeInfoType::EnclosingMethod),
-            "Synthetic" => Ok(AttributeInfoType::Synthetic),
-            "Signature" => Ok(AttributeInfoType::Signature),
-            "SourceFile" => Ok(AttributeInfoType::SourceFile),
-            "SourceDebugExtension" => Ok(AttributeInfoType::SourceDebugExtension),
-            "LineNumberTable" => Ok(AttributeInfoType::LineNumberTable),
-            "LocalVariableTable" => Ok(AttributeInfoType::LocalVariableTable),
-            "LocalVariableTypeTable" => Ok(AttributeInfoType::LocalVariableTypeTable),
-            "Deprecated" => Ok(AttributeInfoType::Deprecated),
-            "RuntimeVisibleAnnotations" => Ok(AttributeInfoType::RuntimeVisibleAnnotations),
-            "RuntimeInvisibleAnnotations" => Ok(AttributeInfoType::RuntimeInvisibleAnnotations),
-            "RuntimeVisibleParameterAnnotations" => Ok(AttributeInfoType::RuntimeVisibleParameterAnnotations),
-            "RuntimeInvisibleParameterAnnotations" => Ok(AttributeInfoType::RuntimeInvisibleParameterAnnotations),
-            "RuntimeVisibleTypeAnnotations" => Ok(AttributeInfoType::RuntimeVisibleTypeAnnotations),
-            "RuntimeInvisibleTypeAnnotations" => Ok(AttributeInfoType::RuntimeInvisibleTypeAnnotations),
-            "AnnotationDefault" => Ok(AttributeInfoType::AnnotationDefault),
-            "BootstrapMethods" => Ok(AttributeInfoType::BootstrapMethods),
-            _ => Err(()),
-        }
     }
 }
 
@@ -1125,29 +1098,29 @@ pub struct ExceptionTableEntry {
 }
 
 impl ExceptionTableEntry {
-    pub fn from_reader<R: BufRead>(buf_reader: &mut R) -> Self {
+    pub fn from_reader<R: BufRead>(buf_reader: &mut R) -> Result<Self> {
         let mut start_pc_buf = [0; 2];
-        buf_reader.read_exact(&mut start_pc_buf).expect("Failed to read start pc for exception table entry in Code attribute from class file");
+        buf_reader.read_exact(&mut start_pc_buf)?;
         let start_pc = u16::from_be_bytes(start_pc_buf);
 
         let mut end_pc_buf = [0; 2];
-        buf_reader.read_exact(&mut end_pc_buf).expect("Failed to read end pc for exception table entry in Code attribute from class file");
+        buf_reader.read_exact(&mut end_pc_buf)?;
         let end_pc = u16::from_be_bytes(end_pc_buf);
 
         let mut handler_pc_buf = [0; 2];
-        buf_reader.read_exact(&mut handler_pc_buf).expect("Failed to read handler pc for exception table entry in Code attribute from class file");
+        buf_reader.read_exact(&mut handler_pc_buf)?;
         let handler_pc = u16::from_be_bytes(handler_pc_buf);
 
         let mut catch_type_buf = [0; 2];
-        buf_reader.read_exact(&mut catch_type_buf).expect("Failed to read catch type for exception table entry in Code attribute from class file");
+        buf_reader.read_exact(&mut catch_type_buf)?;
         let catch_type = u16::from_be_bytes(catch_type_buf);
 
-        ExceptionTableEntry {
+        Ok(ExceptionTableEntry {
             start_pc,
             end_pc,
             handler_pc,
             catch_type,
-        }
+        })
     }
 }
 
@@ -1171,29 +1144,32 @@ pub struct InnerClassInfo {
 }
 
 impl InnerClassInfo {
-    pub fn from_reader<R: BufRead>(buf_reader: &mut R) -> Self {
+    pub fn from_reader<R: BufRead>(buf_reader: &mut R) -> Result<Self> {
         let mut inner_class_info_index_buf = [0; 2];
-        buf_reader.read_exact(&mut inner_class_info_index_buf).expect("Failed to read inner class info index for InnerClasses attribute from class file");
+        buf_reader.read_exact(&mut inner_class_info_index_buf)?;
         let inner_class_info_index = u16::from_be_bytes(inner_class_info_index_buf);
 
         let mut outer_class_info_index_buf = [0; 2];
-        buf_reader.read_exact(&mut outer_class_info_index_buf).expect("Failed to read outer class info index for InnerClasses attribute from class file");
+        buf_reader.read_exact(&mut outer_class_info_index_buf)?;
         let outer_class_info_index = u16::from_be_bytes(outer_class_info_index_buf);
 
         let mut inner_name_index_buf = [0; 2];
-        buf_reader.read_exact(&mut inner_name_index_buf).expect("Failed to read inner name index for InnerClasses attribute from class file");
+        buf_reader.read_exact(&mut inner_name_index_buf)?;
         let inner_name_index = u16::from_be_bytes(inner_name_index_buf);
 
         let mut inner_class_access_flags_buf = [0; 2];
-        buf_reader.read_exact(&mut inner_class_access_flags_buf).expect("Failed to read inner class access flags for InnerClasses attribute from class file");
-        let inner_class_access_flags = InnerClassAccessFlags::from_bits(u16::from_be_bytes(inner_class_access_flags_buf)).expect("Invalid inner class access flags in class file");
+        buf_reader.read_exact(&mut inner_class_access_flags_buf)?;
+        let inner_class_access_flags = InnerClassAccessFlags::from_bits(u16::from_be_bytes(inner_class_access_flags_buf));
+        if inner_class_access_flags.is_none() {
+            return Err(anyhow!("Invalid inner class access flags in class file"));
+        }
 
-        InnerClassInfo {
+        Ok(InnerClassInfo {
             inner_class_info_index,
             outer_class_info_index,
             inner_name_index,
-            inner_class_access_flags,
-        }
+            inner_class_access_flags: inner_class_access_flags.unwrap(),
+        })
     }
 }
 
@@ -1220,19 +1196,19 @@ pub struct LineNumberInfo {
 }
 
 impl LineNumberInfo {
-    pub fn from_reader<R: BufRead>(buf_reader: &mut R) -> Self {
+    pub fn from_reader<R: BufRead>(buf_reader: &mut R) -> Result<Self> {
         let mut start_pc_buf = [0; 2];
-        buf_reader.read_exact(&mut start_pc_buf).expect("Failed to read start pc for line number info in LineNumberTable attribute from class file");
+        buf_reader.read_exact(&mut start_pc_buf)?;
         let start_pc = u16::from_be_bytes(start_pc_buf);
 
         let mut line_number_buf = [0; 2];
-        buf_reader.read_exact(&mut line_number_buf).expect("Failed to read line number for line number info in LineNumberTable attribute from class file");
+        buf_reader.read_exact(&mut line_number_buf)?;
         let line_number = u16::from_be_bytes(line_number_buf);
 
-        LineNumberInfo {
+        Ok(LineNumberInfo {
             start_pc,
             line_number,
-        }
+        })
     }
 }
 
@@ -1246,34 +1222,34 @@ pub struct LocalVariableInfo {
 }
 
 impl LocalVariableInfo {
-    pub fn from_reader<R: BufRead>(buf_reader: &mut R) -> Self {
+    pub fn from_reader<R: BufRead>(buf_reader: &mut R) -> Result<Self> {
         let mut start_pc_buf = [0; 2];
-        buf_reader.read_exact(&mut start_pc_buf).expect("Failed to read start pc for local variable info in LocalVariableTable attribute from class file");
+        buf_reader.read_exact(&mut start_pc_buf)?;
         let start_pc = u16::from_be_bytes(start_pc_buf);
 
         let mut length_buf = [0; 2];
-        buf_reader.read_exact(&mut length_buf).expect("Failed to read length for local variable info in LocalVariableTable attribute from class file");
+        buf_reader.read_exact(&mut length_buf)?;
         let length = u16::from_be_bytes(length_buf);
 
         let mut name_index_buf = [0; 2];
-        buf_reader.read_exact(&mut name_index_buf).expect("Failed to read name index for local variable info in LocalVariableTable attribute from class file");
+        buf_reader.read_exact(&mut name_index_buf)?;
         let name_index = u16::from_be_bytes(name_index_buf);
 
         let mut descriptor_index_buf = [0; 2];
-        buf_reader.read_exact(&mut descriptor_index_buf).expect("Failed to read descriptor index for local variable info in LocalVariableTable attribute from class file");
+        buf_reader.read_exact(&mut descriptor_index_buf)?;
         let descriptor_index = u16::from_be_bytes(descriptor_index_buf);
 
         let mut index_buf = [0; 2];
-        buf_reader.read_exact(&mut index_buf).expect("Failed to read index for local variable info in LocalVariableTable attribute from class file");
+        buf_reader.read_exact(&mut index_buf)?;
         let index = u16::from_be_bytes(index_buf);
 
-        LocalVariableInfo {
+        Ok(LocalVariableInfo {
             start_pc,
             length,
             name_index,
             descriptor_index,
             index,
-        }
+        })
     }
 }
 
@@ -1287,34 +1263,34 @@ pub struct LocalVariableTypeInfo {
 }
 
 impl LocalVariableTypeInfo {
-    pub fn from_reader<R: BufRead>(buf_reader: &mut R) -> Self {
+    pub fn from_reader<R: BufRead>(buf_reader: &mut R) -> Result<Self> {
         let mut start_pc_buf = [0; 2];
-        buf_reader.read_exact(&mut start_pc_buf).expect("Failed to read start pc for local variable type info in LocalVariableTypeTable attribute from class file");
+        buf_reader.read_exact(&mut start_pc_buf)?;
         let start_pc = u16::from_be_bytes(start_pc_buf);
 
         let mut length_buf = [0; 2];
-        buf_reader.read_exact(&mut length_buf).expect("Failed to read length for local variable type info in LocalVariableTypeTable attribute from class file");
+        buf_reader.read_exact(&mut length_buf)?;
         let length = u16::from_be_bytes(length_buf);
 
         let mut name_index_buf = [0; 2];
-        buf_reader.read_exact(&mut name_index_buf).expect("Failed to read name index for local variable type info in LocalVariableTypeTable attribute from class file");
+        buf_reader.read_exact(&mut name_index_buf)?;
         let name_index = u16::from_be_bytes(name_index_buf);
 
         let mut signature_index_buf = [0; 2];
-        buf_reader.read_exact(&mut signature_index_buf).expect("Failed to read signature index for local variable type info in LocalVariableTypeTable attribute from class file");
+        buf_reader.read_exact(&mut signature_index_buf)?;
         let signature_index = u16::from_be_bytes(signature_index_buf);
 
         let mut index_buf = [0; 2];
-        buf_reader.read_exact(&mut index_buf).expect("Failed to read index for local variable type info in LocalVariableTypeTable attribute from class file");
+        buf_reader.read_exact(&mut index_buf)?;
         let index = u16::from_be_bytes(index_buf);
 
-        LocalVariableTypeInfo {
+        Ok(LocalVariableTypeInfo {
             start_pc,
             length,
             name_index,
             signature_index,
             index,
-        }
+        })
     }
 }
 
@@ -1326,31 +1302,31 @@ pub struct Annotation {
 }
 
 impl Annotation {
-    pub fn from_reader<R: BufRead>(buf_reader: &mut R) -> Self {
+    pub fn from_reader<R: BufRead>(buf_reader: &mut R) -> Result<Self> {
         let mut type_index_buf = [0; 2];
-        buf_reader.read_exact(&mut type_index_buf).expect("Failed to read type index for annotation from class file");
+        buf_reader.read_exact(&mut type_index_buf)?;
         let type_index = u16::from_be_bytes(type_index_buf);
 
         let mut num_element_value_pairs_buf = [0; 2];
-        buf_reader.read_exact(&mut num_element_value_pairs_buf).expect("Failed to read number of element value pairs for annotation from class file");
+        buf_reader.read_exact(&mut num_element_value_pairs_buf)?;
         let num_element_value_pairs = u16::from_be_bytes(num_element_value_pairs_buf);
 
         let mut element_value_pairs = Vec::with_capacity(num_element_value_pairs as usize);
         for _ in 0..num_element_value_pairs {
             let mut element_name_index_buf = [0; 2];
-            buf_reader.read_exact(&mut element_name_index_buf).expect("Failed to read element name index for element value pair in annotation from class file");
+            buf_reader.read_exact(&mut element_name_index_buf)?;
             let element_name_index = u16::from_be_bytes(element_name_index_buf);
 
-            let value = ElementValue::from_reader(buf_reader);
+            let value = ElementValue::from_reader(buf_reader)?;
 
             element_value_pairs.push(ElementValuePair { element_name_index, value });
         }
 
-        Annotation {
+        Ok(Annotation {
             type_index,
             num_element_value_pairs,
             element_value_pairs,
-        }
+        })
     }
 }
 
@@ -1367,44 +1343,105 @@ pub struct ParameterAnnotations {
 }
 
 impl ParameterAnnotations {
-    pub fn from_reader<R: BufRead>(buf_reader: &mut R) -> Self {
+    pub fn from_reader<R: BufRead>(buf_reader: &mut R) -> Result<Self> {
         let mut num_annotations_buf = [0; 2];
-        buf_reader.read_exact(&mut num_annotations_buf).expect("Failed to read number of annotations for parameter annotations from class file");
+        buf_reader.read_exact(&mut num_annotations_buf)?;
         let num_annotations = u16::from_be_bytes(num_annotations_buf);
 
         let mut annotations = Vec::with_capacity(num_annotations as usize);
         for _ in 0..num_annotations {
-            let annotation = Annotation::from_reader(buf_reader);
+            let annotation = Annotation::from_reader(buf_reader)?;
             annotations.push(annotation);
         }
 
-        ParameterAnnotations {
+        Ok(ParameterAnnotations {
             num_annotations,
             annotations,
-        }
+        })
     }
 }
 
 #[derive(Debug)]
 pub struct TypeAnnotation {
+    
+}
+
+
+#[derive()]
+pub enum TypeAnnotationTarget {
 
 }
 
 impl TypeAnnotation {
-    pub fn from_reader<R: BufRead>(buf_reader: &mut R) -> Self {
+    pub fn from_reader<R: BufRead>(buf_reader: &mut R) -> Result<Self> {
         todo!("TypeAnnotation parsing not implemented yet");
     }
     
 }
 
-#[derive(Debug)]
-pub struct ElementValue {
-
+pub enum ElementValue {
+    ConstValueIndex(u16),
+    EnumConstValue { type_name_index: u16, const_name_index: u16 },
+    ClassInfoIndex(u16),
+    AnnotationValue(Annotation),
+    ArrayValue { num_values: u16, values: Vec<ElementValue> },
 }
 
 impl ElementValue {
-    pub fn from_reader<R: BufRead>(buf_reader: &mut R) -> Self {
-        todo!("ElementValue parsing not implemented yet");
+    pub fn from_reader<R: BufRead>(buf_reader: &mut R) -> Result<Self> {
+
+        let mut tag_buf = [0; 1];
+        buf_reader.read_exact(&mut tag_buf)?;
+        let tag = tag_buf[0] as char;
+
+        match tag {
+            'B' | 'C' | 'D' | 'F' | 'I' | 'J' | 'S' | 'Z' | 's' => {
+                let mut const_value_index_buf = [0; 2];
+                buf_reader.read_exact(&mut const_value_index_buf)?;
+                let const_value_index = u16::from_be_bytes(const_value_index_buf);
+                Ok(ElementValue::ConstValueIndex(const_value_index))
+            }
+
+            'e' => {
+                let mut type_name_index_buf = [0; 2];
+                buf_reader.read_exact(&mut type_name_index_buf)?;
+                let type_name_index = u16::from_be_bytes(type_name_index_buf);
+
+                let mut const_name_index_buf = [0; 2];
+                buf_reader.read_exact(&mut const_name_index_buf)?;
+                let const_name_index = u16::from_be_bytes(const_name_index_buf);
+
+                Ok(ElementValue::EnumConstValue { type_name_index, const_name_index })
+            }
+
+            'c' => {
+                let mut class_info_index_buf = [0; 2];
+                buf_reader.read_exact(&mut class_info_index_buf)?;
+                let class_info_index = u16::from_be_bytes(class_info_index_buf);
+                Ok(ElementValue::ClassInfoIndex(class_info_index))
+            }
+
+            '@' => {
+                let annotation = Annotation::from_reader(buf_reader)?;
+                Ok(ElementValue::AnnotationValue(annotation))
+            }
+
+            '[' => {
+                let mut num_values_buf = [0; 2];
+                buf_reader.read_exact(&mut num_values_buf)?;
+                let num_values = u16::from_be_bytes(num_values_buf);
+
+                let mut values = Vec::with_capacity(num_values as usize);
+                for _ in 0..num_values {
+                    let value = ElementValue::from_reader(buf_reader)?;
+                    values.push(value);
+                }
+
+                Ok(ElementValue::ArrayValue { num_values, values })
+            }
+
+            _ => Err(anyhow!("Invalid element value tag '{}' in class file", tag)),
+        }
     }
 }
 
@@ -1416,28 +1453,28 @@ pub struct BootstrapMethod {
 }
 
 impl BootstrapMethod {
-    pub fn from_reader<R: BufRead>(buf_reader: &mut R) -> Self {
+    pub fn from_reader<R: BufRead>(buf_reader: &mut R) -> Result<Self> {
         let mut bootstrap_method_ref_buf = [0; 2];
-        buf_reader.read_exact(&mut bootstrap_method_ref_buf).expect("Failed to read bootstrap method reference for bootstrap method from class file");
+        buf_reader.read_exact(&mut bootstrap_method_ref_buf)?;
         let bootstrap_method_ref = u16::from_be_bytes(bootstrap_method_ref_buf);
 
         let mut num_bootstrap_arguments_buf = [0; 2];
-        buf_reader.read_exact(&mut num_bootstrap_arguments_buf).expect("Failed to read number of bootstrap arguments for bootstrap method from class file");
+        buf_reader.read_exact(&mut num_bootstrap_arguments_buf)?;
         let num_bootstrap_arguments = u16::from_be_bytes(num_bootstrap_arguments_buf);
 
         let mut bootstrap_arguments = Vec::with_capacity(num_bootstrap_arguments as usize);
         for _ in 0..num_bootstrap_arguments {
             let mut bootstrap_argument_buf = [0; 2];
-            buf_reader.read_exact(&mut bootstrap_argument_buf).expect("Failed to read bootstrap argument for bootstrap method from class file");
+            buf_reader.read_exact(&mut bootstrap_argument_buf)?;
             let bootstrap_argument = u16::from_be_bytes(bootstrap_argument_buf);
             bootstrap_arguments.push(bootstrap_argument);
         }
 
-        BootstrapMethod {
+        Ok(BootstrapMethod {
             bootstrap_method_ref,
             num_bootstrap_arguments,
             bootstrap_arguments,
-        }
+        })
     }
 }
 
@@ -1448,19 +1485,19 @@ pub struct MethodParameter {
 }
 
 impl MethodParameter {
-    pub fn from_reader<R: BufRead>(buf_reader: &mut R) -> Self {
+    pub fn from_reader<R: BufRead>(buf_reader: &mut R) -> Result<Self> {
         let mut name_index_buf = [0; 2];
-        buf_reader.read_exact(&mut name_index_buf).expect("Failed to read name index for method parameter from class file");
+        buf_reader.read_exact(&mut name_index_buf)?;
         let name_index = u16::from_be_bytes(name_index_buf);
 
         let mut access_flags_buf = [0; 2];
-        buf_reader.read_exact(&mut access_flags_buf).expect("Failed to read access flags for method parameter from class file");
+        buf_reader.read_exact(&mut access_flags_buf)?;
         let access_flags = MethodParameterAccessFlags::from_bits(u16::from_be_bytes(access_flags_buf)).expect("Invalid method parameter access flags in class file");
 
-        MethodParameter {
+        Ok(MethodParameter {
             name_index,
             access_flags,
-        }
+        })
     }
 }
 
@@ -1481,24 +1518,27 @@ pub struct ModuleRequire {
 }
 
 impl ModuleRequire {
-    pub fn from_reader<R: BufRead>(buf_reader: &mut R) -> Self {
+    pub fn from_reader<R: BufRead>(buf_reader: &mut R) -> Result<Self> {
         let mut required_module_index_buf = [0; 2];
-        buf_reader.read_exact(&mut required_module_index_buf).expect("Failed to read required module index for module require from class file");
+        buf_reader.read_exact(&mut required_module_index_buf)?;
         let required_module_index = u16::from_be_bytes(required_module_index_buf);
 
         let mut required_flags_buf = [0; 2];
         buf_reader.read_exact(&mut required_flags_buf).expect("Failed to read required flags for module require from class file");
-        let required_flags = ModuleRequireFlags::from_bits(u16::from_be_bytes(required_flags_buf)).expect("Invalid module require flags in class file");
+        let required_flags = ModuleRequireFlags::from_bits(u16::from_be_bytes(required_flags_buf));
+        if required_flags.is_none() {
+            return Err(anyhow!("Invalid module require flags in class file"));
+        }
 
         let mut required_version_index_buf = [0; 2];
-        buf_reader.read_exact(&mut required_version_index_buf).expect("Failed to read required version index for module require from class file");
+        buf_reader.read_exact(&mut required_version_index_buf)?;
         let required_version_index = u16::from_be_bytes(required_version_index_buf);
 
-        ModuleRequire {
+        Ok(ModuleRequire {
             required_module_index,
-            required_flags,
+            required_flags: required_flags.unwrap(),
             required_version_index,
-        }
+        })
     }
 }
 
@@ -1521,33 +1561,36 @@ pub struct ModuleExport {
 }
 
 impl ModuleExport {
-    pub fn from_reader<R: BufRead>(buf_reader: &mut R) -> Self {
+    pub fn from_reader<R: BufRead>(buf_reader: &mut R) -> Result<Self> {
         let mut exported_package_index_buf = [0; 2];
-        buf_reader.read_exact(&mut exported_package_index_buf).expect("Failed to read exported package index for module export from class file");
+        buf_reader.read_exact(&mut exported_package_index_buf)?;
         let exported_package_index = u16::from_be_bytes(exported_package_index_buf);
 
         let mut export_flags_buf = [0; 2];
-        buf_reader.read_exact(&mut export_flags_buf).expect("Failed to read export flags for module export from class file");
-        let export_flags = ModuleExportFlags::from_bits(u16::from_be_bytes(export_flags_buf)).expect("Invalid module export flags in class file");
+        buf_reader.read_exact(&mut export_flags_buf)?;
+        let export_flags = ModuleExportFlags::from_bits(u16::from_be_bytes(export_flags_buf));
+        if export_flags.is_none() {
+            return Err(anyhow!("Invalid module export flags in class file"));
+        }
 
         let mut exported_to_count_buf = [0; 2];
-        buf_reader.read_exact(&mut exported_to_count_buf).expect("Failed to read exported to count for module export from class file");
+        buf_reader.read_exact(&mut exported_to_count_buf)?;
         let exported_to_count = u16::from_be_bytes(exported_to_count_buf);
 
         let mut exported_to_index = Vec::with_capacity(exported_to_count as usize);
         for _ in 0..exported_to_count {
             let mut exported_to_index_buf = [0; 2];
-            buf_reader.read_exact(&mut exported_to_index_buf).expect("Failed to read exported to index for module export from class file");
+            buf_reader.read_exact(&mut exported_to_index_buf)?;
             let exported_to_index_entry = u16::from_be_bytes(exported_to_index_buf);
             exported_to_index.push(exported_to_index_entry);
         }
 
-        ModuleExport {
+        Ok(ModuleExport {
             exported_package_index,
-            export_flags,
+            export_flags: export_flags.unwrap(),
             exported_to_count,
             exported_to_index,
-        }
+        })
     }
 }
 
@@ -1568,33 +1611,33 @@ pub struct ModuleOpen {
 }
 
 impl ModuleOpen {
-    pub fn from_reader<R: BufRead>(buf_reader: &mut R) -> Self {
+    pub fn from_reader<R: BufRead>(buf_reader: &mut R) -> Result<Self> {
         let mut opens_index_buf = [0; 2];
-        buf_reader.read_exact(&mut opens_index_buf).expect("Failed to read opens index for module open from class file");
+        buf_reader.read_exact(&mut opens_index_buf)?;
         let opens_index = u16::from_be_bytes(opens_index_buf);
 
         let mut opens_flags_buf = [0; 2];
-        buf_reader.read_exact(&mut opens_flags_buf).expect("Failed to read opens flags for module open from class file");
+        buf_reader.read_exact(&mut opens_flags_buf)?;
         let opens_flags = ModuleOpensFlags::from_bits(u16::from_be_bytes(opens_flags_buf)).expect("Invalid module opens flags in class file");
 
         let mut opens_to_count_buf = [0; 2];
-        buf_reader.read_exact(&mut opens_to_count_buf).expect("Failed to read opens to count for module open from class file");
+        buf_reader.read_exact(&mut opens_to_count_buf)?;
         let opens_to_count = u16::from_be_bytes(opens_to_count_buf);
 
         let mut opens_to_index = Vec::with_capacity(opens_to_count as usize);
         for _ in 0..opens_to_count {
             let mut opens_to_index_buf = [0; 2];
-            buf_reader.read_exact(&mut opens_to_index_buf).expect("Failed to read opens to index for module open from class file");
+            buf_reader.read_exact(&mut opens_to_index_buf)?;
             let opens_to_index_entry = u16::from_be_bytes(opens_to_index_buf);
             opens_to_index.push(opens_to_index_entry);
         }
 
-        ModuleOpen {
+        Ok(ModuleOpen {
             opens_index,
             opens_flags,
             opens_to_count,
             opens_to_index,
-        }
+        })
     }
     
 }
@@ -1615,28 +1658,28 @@ pub struct ModuleProvide {
 }
 
 impl ModuleProvide {
-    pub fn from_reader<R: BufRead>(buf_reader: &mut R) -> Self {
+    pub fn from_reader<R: BufRead>(buf_reader: &mut R) -> Result<Self> {
         let mut provided_service_index_buf = [0; 2];
-        buf_reader.read_exact(&mut provided_service_index_buf).expect("Failed to read provided service index for module provide from class file");
+        buf_reader.read_exact(&mut provided_service_index_buf)?;
         let provided_service_index = u16::from_be_bytes(provided_service_index_buf);
 
         let mut provides_with_count_buf = [0; 2];
-        buf_reader.read_exact(&mut provides_with_count_buf).expect("Failed to read provides with count for module provide from class file");
+        buf_reader.read_exact(&mut provides_with_count_buf)?;
         let provides_with_count = u16::from_be_bytes(provides_with_count_buf);
 
         let mut provides_with_index = Vec::with_capacity(provides_with_count as usize);
         for _ in 0..provides_with_count {
             let mut provides_with_index_buf = [0; 2];
-            buf_reader.read_exact(&mut provides_with_index_buf).expect("Failed to read provides with index for module provide from class file");
+            buf_reader.read_exact(&mut provides_with_index_buf)?;
             let provides_with_index_entry = u16::from_be_bytes(provides_with_index_buf);
             provides_with_index.push(provides_with_index_entry);
         }
 
-        ModuleProvide {
+        Ok(ModuleProvide {
             provided_service_index,
             provides_with_count,
             provides_with_index,
-        }
+        })
     }
 }
 
@@ -1649,30 +1692,30 @@ pub struct RecordComponentInfo {
 }
 
 impl RecordComponentInfo {
-    pub fn from_reader<R: BufRead>(buf_reader: &mut R, constant_pool_info: &Vec<CpInfo>) -> Self {
+    pub fn from_reader<R: BufRead>(buf_reader: &mut R, constant_pool_info: &Vec<CpInfo>) -> Result<Self> {
         let mut name_index_buf = [0; 2];
-        buf_reader.read_exact(&mut name_index_buf).expect("Failed to read name index for record component from class file");
+        buf_reader.read_exact(&mut name_index_buf)?;
         let name_index = u16::from_be_bytes(name_index_buf);
 
         let mut descriptor_index_buf = [0; 2];
-        buf_reader.read_exact(&mut descriptor_index_buf).expect("Failed to read descriptor index for record component from class file");
+        buf_reader.read_exact(&mut descriptor_index_buf)?;
         let descriptor_index = u16::from_be_bytes(descriptor_index_buf);
 
         let mut attributes_count_buf = [0; 2];
-        buf_reader.read_exact(&mut attributes_count_buf).expect("Failed to read attributes count for record component from class file");
+        buf_reader.read_exact(&mut attributes_count_buf)?;
         let attributes_count = u16::from_be_bytes(attributes_count_buf);
 
         let mut attributes = Vec::with_capacity(attributes_count as usize);
         for _ in 0..attributes_count {
-            let attribute_info = AttributeInfo::from_reader(buf_reader, constant_pool_info);
+            let attribute_info = AttributeInfo::from_reader(buf_reader, constant_pool_info)?;
             attributes.push(attribute_info);
         }
 
-        RecordComponentInfo {
+        Ok(RecordComponentInfo {
             name_index,
             descriptor_index,
             attributes_count,
             attributes,
-        }
+        })
     }
 }
