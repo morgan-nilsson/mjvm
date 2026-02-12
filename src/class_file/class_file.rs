@@ -1486,13 +1486,11 @@ impl ParameterAnnotations {
 
 #[derive(Debug)]
 pub struct TypeAnnotation {
-    
-}
-
-
-#[derive()]
-pub enum TypeAnnotationTarget {
-
+    type_annotation_target: TypeAnnotationTarget,
+    type_path: TypePath,
+    type_index: u16,
+    num_element_value_pairs: u16,
+    element_value_pairs: Vec<ElementValuePair>,
 }
 
 impl TypeAnnotation {
@@ -1500,6 +1498,72 @@ impl TypeAnnotation {
         todo!("TypeAnnotation parsing not implemented yet");
     }
     
+}
+
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum TypeAnnotationTarget {
+    TypeParameterTarget { type_parameter_index: u8 },
+    SupertypeTarget { supertype_index: u16 },
+    TypeParameterBoundTarget { type_parameter_index: u8, bound_index: u8 },
+    EmptyTarget,
+    FormalParameterTarget { formal_parameter_index: u8 },
+    ThrowsTarget { throws_type_index: u16 },
+    LocalvarTarget { table_length: u16, table: Vec<LocalvarTargetTableEntry> },
+    CatchTarget { exception_table_index: u16 },
+    OffsetTarget { offset: u16 },
+    TypeArgumentTarget { offset: u16, type_argument_index: u8 },
+}
+
+impl TypeAnnotationTarget {
+    pub fn from_reader<R: BufRead>(buf_reader: &mut R) -> Result<Self> {
+        todo!("TypeAnnotationTarget parsing not implemented yet");
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct LocalvarTargetTableEntry {
+    start_pc: u16,
+    length: u16,
+    index: u16,
+}
+
+#[derive(Debug)]
+pub struct TypePath {
+    path_length: u8,
+    paths: Vec<TypePathEntry>,
+}
+
+impl TypePath {
+    pub fn from_reader<R: BufRead>(buf_reader: &mut R) -> Result<Self> {
+        let mut path_length_buf = [0; 1];
+        buf_reader.read_exact(&mut path_length_buf)?;
+        let path_length = u8::from_be_bytes(path_length_buf);
+
+        let mut paths = Vec::with_capacity(path_length as usize);
+        for _ in 0..path_length {
+            let mut type_path_kind_buf = [0; 1];
+            buf_reader.read_exact(&mut type_path_kind_buf)?;
+            let type_path_kind = u8::from_be_bytes(type_path_kind_buf);
+
+            let mut type_argument_index_buf = [0; 1];
+            buf_reader.read_exact(&mut type_argument_index_buf)?;
+            let type_argument_index = u8::from_be_bytes(type_argument_index_buf);
+
+            paths.push(TypePathEntry { type_path_kind, type_argument_index });
+        }
+
+        Ok(TypePath {
+            path_length,
+            paths,
+        })
+    }
+}
+
+#[derive(Debug)]
+pub struct TypePathEntry {
+    type_path_kind: u8,
+    type_argument_index: u8,
 }
 
 #[derive(Debug)]
