@@ -2,13 +2,15 @@ use std::io::{BufRead, BufReader, Read};
 use bitflags::bitflags;
 use anyhow::{Result, anyhow};
 
+use crate::const_pool::constant_pool::{ConstantPoolInfo, ConstantPoolInfoTag};
+
 #[derive(Debug)]
 pub struct ClassFile {
     magic: u32,
     minor_version: u16,
     major_version: u16,
     constant_pool_count: u16,
-    constant_pool: Vec<CpInfo>,
+    constant_pool: Vec<ConstantPoolInfo>,
     access_flags: AccessFlags,
     this_class: u16,
     super_class: u16,
@@ -17,7 +19,7 @@ pub struct ClassFile {
     fields_count: u16,
     fields: Vec<FieldInfo>,
     methods_count: u16,
-    methods: Vec<MethodInfo>,
+    methods: Vec<ConstantPoolMethodInfo>,
     attributes_count: u16,
     attributes: Vec<AttributeInfo>,
 }
@@ -50,7 +52,7 @@ impl ClassFile {
         let mut constant_pool = Vec::with_capacity(constant_pool_count as usize);
 
         for _ in 0..constant_pool_count {
-            let cp_info = CpInfo::from_reader(&mut buf_reader)?;
+            let cp_info = ConstantPoolInfo::from_reader(&mut buf_reader)?;
             constant_pool.push(cp_info);
         }
 
@@ -106,7 +108,7 @@ impl ClassFile {
         let mut methods = Vec::with_capacity(methods_count as usize);
 
         for _ in 0..methods_count {
-            let method_info = MethodInfo::from_reader(&mut buf_reader, &constant_pool)?;
+            let method_info = ConstantPoolMethodInfo::from_reader(&mut buf_reader, &constant_pool)?;
             methods.push(method_info);
         }
 
@@ -121,6 +123,12 @@ impl ClassFile {
         for _ in 0..attributes_count {
             let attribute_info = AttributeInfo::from_reader(&mut buf_reader, &constant_pool)?;
             attributes.push(attribute_info);
+        }
+
+        // reader must be fully consumed at this point, otherwise the class file is malformed
+        let mut leftover_buf = [0; 1];
+        if buf_reader.read(&mut leftover_buf)? != 0 {
+            return Err(anyhow!("Class file has extra data after expected end of file"));
         }
 
         Ok(ClassFile {
@@ -148,96 +156,21 @@ impl ClassFile {
     }
 }
 
-use std::convert::TryFrom;
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-#[repr(u8)]
-pub enum CpInfoTag {
-    ConstantClass = 7,
-    ConstantFieldRef = 9,
-    ConstantMethodRef = 10,
-    ConstantInterfaceMethodRef = 11,
-    ConstantString = 8,
-    ConstantInteger = 3,
-    ConstantFloat = 4,
-    ConstantLong = 5,
-    ConstantDouble = 6,
-    ConstantNameAndType = 12,
-    ConstantUtf8 = 1,
-    ConstantMethodHandle = 15,
-    ConstantMethodType = 16,
-    ConstantDynamic = 17,
-    ConstantInvokeDynamic = 18,
-    ConstantModule = 19,
-    ConstantPackage = 20,
-
-}
-
-impl TryFrom<u8> for CpInfoTag {
-    type Error = ();
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            7 => Ok(CpInfoTag::ConstantClass),
-            9 => Ok(CpInfoTag::ConstantFieldRef),
-            10 => Ok(CpInfoTag::ConstantMethodRef),
-            11 => Ok(CpInfoTag::ConstantInterfaceMethodRef),
-            8 => Ok(CpInfoTag::ConstantString),
-            3 => Ok(CpInfoTag::ConstantInteger),
-            4 => Ok(CpInfoTag::ConstantFloat),
-            5 => Ok(CpInfoTag::ConstantLong),
-            6 => Ok(CpInfoTag::ConstantDouble),
-            12 => Ok(CpInfoTag::ConstantNameAndType),
-            1 => Ok(CpInfoTag::ConstantUtf8),
-            15 => Ok(CpInfoTag::ConstantMethodHandle),
-            16 => Ok(CpInfoTag::ConstantMethodType),
-            17 => Ok(CpInfoTag::ConstantDynamic),
-            18 => Ok(CpInfoTag::ConstantInvokeDynamic),
-            19 => Ok(CpInfoTag::ConstantModule),
-            20 => Ok(CpInfoTag::ConstantPackage),
-            _ => Err(()),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub enum CpInfo {
-    ConstantClass { name_index: u16 },
-    ConstantFieldRef { class_index: u16, name_and_type_index: u16 },
-    ConstantMethodRef { class_index: u16, name_and_type_index: u16 },
-    ConstantInterfaceMethodRef { class_index: u16, name_and_type_index: u16 },
-    ConstantString { string_index: u16 },
-    ConstantInteger { bytes: u32 },
-    ConstantFloat { bytes: u32 },
-    ConstantLong { high_bytes: u32, low_bytes: u32 },
-    ConstantDouble { high_bytes: u32, low_bytes: u32 },
-    ConstantNameAndType { name_index: u16, descriptor_index: u16 },
-    ConstantUtf8 { length: u16, bytes: Vec<u8> },
-    ConstantMethodHandle { reference_kind: u8, reference_index: u16 },
-    ConstantMethodType { descriptor_index: u16 },
-    ConstantDynamic { bootstrap_method_attr_index: u16, name_and_type_index: u16 },
-    ConstantInvokeDynamic { bootstrap_method_attr_index: u16, name_and_type_index: u16 },
-    ConstantModule { name_index: u16 },
-    ConstantPackage { name_index: u16 },
-}
-
-
-
-impl CpInfo {
+impl ConstantPoolInfo {
     pub fn from_reader<R: BufRead>(buf_reader: &mut R) -> Result<Self> {
         let mut tag_buf = [0; 1];
         buf_reader.read_exact(&mut tag_buf)?;
-        let tag = CpInfoTag::try_from(u8::from_be_bytes(tag_buf)).map(|t| t).map_err(|_| anyhow!("Invalid constant pool tag in class file: {}", tag_buf[0]))?;
+        let tag = ConstantPoolInfoTag::try_from(u8::from_be_bytes(tag_buf)).map(|t| t).map_err(|_| anyhow!("Invalid constant pool tag in class file: {}", tag_buf[0]))?;
 
         match tag {
-            CpInfoTag::ConstantClass => {
+            ConstantPoolInfoTag::ConstantClass => {
                 let mut name_index_buf = [0; 2];
                 buf_reader.read_exact(&mut name_index_buf)?;
                 let name_index = u16::from_be_bytes(name_index_buf);
-                Ok(CpInfo::ConstantClass { name_index })
+                Ok(ConstantPoolInfo::ConstantClass { name_index })
             }
 
-            CpInfoTag::ConstantFieldRef => {
+            ConstantPoolInfoTag::ConstantFieldRef => {
                 let mut class_index_buf = [0; 2];
                 buf_reader.read_exact(&mut class_index_buf)?;
                 let class_index = u16::from_be_bytes(class_index_buf);
@@ -246,9 +179,9 @@ impl CpInfo {
                 buf_reader.read_exact(&mut name_and_type_index_buf)?;
                 let name_and_type_index = u16::from_be_bytes(name_and_type_index_buf);
 
-                Ok(CpInfo::ConstantFieldRef { class_index, name_and_type_index })
+                Ok(ConstantPoolInfo::ConstantFieldRef { class_index, name_and_type_index })
             }
-            CpInfoTag::ConstantMethodRef => {
+            ConstantPoolInfoTag::ConstantMethodRef => {
                 let mut class_index_buf = [0; 2];
                 buf_reader.read_exact(&mut class_index_buf)?;
                 let class_index = u16::from_be_bytes(class_index_buf);
@@ -257,9 +190,9 @@ impl CpInfo {
                 buf_reader.read_exact(&mut name_and_type_index_buf)?;
                 let name_and_type_index = u16::from_be_bytes(name_and_type_index_buf);
 
-                Ok(CpInfo::ConstantMethodRef { class_index, name_and_type_index })
+                Ok(ConstantPoolInfo::ConstantMethodRef { class_index, name_and_type_index })
             }
-            CpInfoTag::ConstantInterfaceMethodRef => {
+            ConstantPoolInfoTag::ConstantInterfaceMethodRef => {
                 let mut class_index_buf = [0; 2];
                 buf_reader.read_exact(&mut class_index_buf)?;
                 let class_index = u16::from_be_bytes(class_index_buf);
@@ -268,31 +201,31 @@ impl CpInfo {
                 buf_reader.read_exact(&mut name_and_type_index_buf)?;
                 let name_and_type_index = u16::from_be_bytes(name_and_type_index_buf);
 
-                Ok(CpInfo::ConstantInterfaceMethodRef { class_index, name_and_type_index })
+                Ok(ConstantPoolInfo::ConstantInterfaceMethodRef { class_index, name_and_type_index })
             }
 
-            CpInfoTag::ConstantString => {
+            ConstantPoolInfoTag::ConstantString => {
                 let mut string_index_buf = [0; 2];
                 buf_reader.read_exact(&mut string_index_buf)?;
                 let string_index = u16::from_be_bytes(string_index_buf);
-                Ok(CpInfo::ConstantString { string_index })
+                Ok(ConstantPoolInfo::ConstantString { string_index })
             }
 
-            CpInfoTag::ConstantInteger => {
+            ConstantPoolInfoTag::ConstantInteger => {
                 let mut bytes_buf = [0; 4];
                 buf_reader.read_exact(&mut bytes_buf)?;
                 let bytes = u32::from_be_bytes(bytes_buf);
-                Ok(CpInfo::ConstantInteger { bytes })
+                Ok(ConstantPoolInfo::ConstantInteger { bytes })
             }
 
-            CpInfoTag::ConstantFloat => {
+            ConstantPoolInfoTag::ConstantFloat => {
                 let mut bytes_buf = [0; 4];
                 buf_reader.read_exact(&mut bytes_buf)?;
                 let bytes = u32::from_be_bytes(bytes_buf);
-                Ok(CpInfo::ConstantFloat { bytes })
+                Ok(ConstantPoolInfo::ConstantFloat { bytes })
             }
 
-            CpInfoTag::ConstantLong => {
+            ConstantPoolInfoTag::ConstantLong => {
                 let mut high_bytes_buf = [0; 4];
                 buf_reader.read_exact(&mut high_bytes_buf)?;
                 let high_bytes = u32::from_be_bytes(high_bytes_buf);
@@ -301,11 +234,11 @@ impl CpInfo {
                 buf_reader.read_exact(&mut low_bytes_buf)?;
                 let low_bytes = u32::from_be_bytes(low_bytes_buf);
 
-                Ok(CpInfo::ConstantLong { high_bytes, low_bytes })
+                Ok(ConstantPoolInfo::ConstantLong { high_bytes, low_bytes })
 
             }
 
-            CpInfoTag::ConstantDouble => {
+            ConstantPoolInfoTag::ConstantDouble => {
                 let mut high_bytes_buf = [0; 4];
                 buf_reader.read_exact(&mut high_bytes_buf)?;
                 let high_bytes = u32::from_be_bytes(high_bytes_buf);
@@ -314,10 +247,10 @@ impl CpInfo {
                 buf_reader.read_exact(&mut low_bytes_buf)?;
                 let low_bytes = u32::from_be_bytes(low_bytes_buf);
 
-                Ok(CpInfo::ConstantDouble { high_bytes, low_bytes })
+                Ok(ConstantPoolInfo::ConstantDouble { high_bytes, low_bytes })
             }
 
-            CpInfoTag::ConstantNameAndType => {
+            ConstantPoolInfoTag::ConstantNameAndType => {
                 let mut name_index_buf = [0; 2];
                 buf_reader.read_exact(&mut name_index_buf)?;
                 let name_index = u16::from_be_bytes(name_index_buf);
@@ -326,10 +259,10 @@ impl CpInfo {
                 buf_reader.read_exact(&mut descriptor_index_buf)?;
                 let descriptor_index = u16::from_be_bytes(descriptor_index_buf);
 
-                Ok(CpInfo::ConstantNameAndType { name_index, descriptor_index })
+                Ok(ConstantPoolInfo::ConstantNameAndType { name_index, descriptor_index })
             }
 
-            CpInfoTag::ConstantUtf8 => {
+            ConstantPoolInfoTag::ConstantUtf8 => {
                 let mut length_buf = [0; 2];
                 buf_reader.read_exact(&mut length_buf)?;
                 let length = u16::from_be_bytes(length_buf);
@@ -337,10 +270,10 @@ impl CpInfo {
                 let mut bytes = vec![0; length as usize];
                 buf_reader.read_exact(&mut bytes)?;
 
-                Ok(CpInfo::ConstantUtf8 { length, bytes })
+                Ok(ConstantPoolInfo::ConstantUtf8 { length, bytes })
             }
 
-            CpInfoTag::ConstantMethodHandle => {
+            ConstantPoolInfoTag::ConstantMethodHandle => {
                 let mut reference_kind_buf = [0; 1];
                 buf_reader.read_exact(&mut reference_kind_buf)?;
                 let reference_kind = u8::from_be_bytes(reference_kind_buf);
@@ -349,18 +282,18 @@ impl CpInfo {
                 buf_reader.read_exact(&mut reference_index_buf)?;
                 let reference_index = u16::from_be_bytes(reference_index_buf);
 
-                Ok(CpInfo::ConstantMethodHandle { reference_kind, reference_index })
+                Ok(ConstantPoolInfo::ConstantMethodHandle { reference_kind, reference_index })
             }
 
-            CpInfoTag::ConstantMethodType => {
+            ConstantPoolInfoTag::ConstantMethodType => {
                 let mut descriptor_index_buf = [0; 2];
                 buf_reader.read_exact(&mut descriptor_index_buf)?;
                 let descriptor_index = u16::from_be_bytes(descriptor_index_buf);
 
-                Ok(CpInfo::ConstantMethodType { descriptor_index })
+                Ok(ConstantPoolInfo::ConstantMethodType { descriptor_index })
             }
 
-            CpInfoTag::ConstantDynamic => {
+            ConstantPoolInfoTag::ConstantDynamic => {
                 let mut bootstrap_method_attr_index_buf = [0; 2];
                 buf_reader.read_exact(&mut bootstrap_method_attr_index_buf)?;
                 let bootstrap_method_attr_index = u16::from_be_bytes(bootstrap_method_attr_index_buf);
@@ -369,10 +302,10 @@ impl CpInfo {
                 buf_reader.read_exact(&mut name_and_type_index_buf)?;
                 let name_and_type_index = u16::from_be_bytes(name_and_type_index_buf);
 
-                Ok(CpInfo::ConstantDynamic { bootstrap_method_attr_index, name_and_type_index })
+                Ok(ConstantPoolInfo::ConstantDynamic { bootstrap_method_attr_index, name_and_type_index })
             }
 
-            CpInfoTag::ConstantInvokeDynamic => {
+            ConstantPoolInfoTag::ConstantInvokeDynamic => {
                 let mut bootstrap_method_attr_index_buf = [0; 2];
                 buf_reader.read_exact(&mut bootstrap_method_attr_index_buf)?;
                 let bootstrap_method_attr_index = u16::from_be_bytes(bootstrap_method_attr_index_buf);
@@ -381,21 +314,21 @@ impl CpInfo {
                 buf_reader.read_exact(&mut name_and_type_index_buf)?;
                 let name_and_type_index = u16::from_be_bytes(name_and_type_index_buf);
 
-                Ok(CpInfo::ConstantInvokeDynamic { bootstrap_method_attr_index, name_and_type_index })
+                Ok(ConstantPoolInfo::ConstantInvokeDynamic { bootstrap_method_attr_index, name_and_type_index })
             }
 
-            CpInfoTag::ConstantModule => {
+            ConstantPoolInfoTag::ConstantModule => {
                 let mut name_index_buf = [0; 2];
                 buf_reader.read_exact(&mut name_index_buf)?;
                 let name_index = u16::from_be_bytes(name_index_buf);
-                Ok(CpInfo::ConstantModule { name_index })
+                Ok(ConstantPoolInfo::ConstantModule { name_index })
             }
 
-            CpInfoTag::ConstantPackage => {
+            ConstantPoolInfoTag::ConstantPackage => {
                 let mut name_index_buf = [0; 2];
                 buf_reader.read_exact(&mut name_index_buf)?;
                 let name_index = u16::from_be_bytes(name_index_buf);
-                Ok(CpInfo::ConstantPackage { name_index })
+                Ok(ConstantPoolInfo::ConstantPackage { name_index })
             }
         }
     }
@@ -425,7 +358,7 @@ pub struct FieldInfo {
 }
 
 impl FieldInfo {
-    pub fn from_reader<R: BufRead>(buf_reader: &mut R, constant_pool_entries: &Vec<CpInfo>) -> Result<Self> {
+    pub fn from_reader<R: BufRead>(buf_reader: &mut R, constant_pool_entries: &Vec<ConstantPoolInfo>) -> Result<Self> {
 
         // access flags
         let mut access_flags_buf = [0; 2];
@@ -501,7 +434,7 @@ impl TryFrom<u16> for FieldInfoAccessFlags {
 }
 
 #[derive(Debug)]
-pub struct MethodInfo {
+pub struct ConstantPoolMethodInfo {
     access_flags: MethodAccessFlags,
     name_index: u16,
     descriptor_index: u16,
@@ -509,8 +442,8 @@ pub struct MethodInfo {
     attributes: Vec<AttributeInfo>,
 }
 
-impl MethodInfo {
-    pub fn from_reader<R: BufRead>(buf_reader: &mut R, constant_pool_info: &Vec<CpInfo>) -> Result<Self> {
+impl ConstantPoolMethodInfo {
+    pub fn from_reader<R: BufRead>(buf_reader: &mut R, constant_pool_info: &Vec<ConstantPoolInfo>) -> Result<Self> {
 
         // access flags
         let mut access_flags_buf = [0; 2];
@@ -543,7 +476,7 @@ impl MethodInfo {
             attributes.push(attribute_info);
         }
 
-        Ok(MethodInfo {
+        Ok(ConstantPoolMethodInfo {
             access_flags: access_flags.unwrap(),
             name_index,
             descriptor_index,
@@ -615,12 +548,12 @@ bitflags! {
 }
 
 impl AttributeInfo {
-    pub fn from_reader<R: BufRead>(buf_reader: &mut R, constant_pool_info: &Vec<CpInfo>) -> Result<Self> {
+    pub fn from_reader<R: BufRead>(buf_reader: &mut R, constant_pool_info: &Vec<ConstantPoolInfo>) -> Result<Self> {
         let mut attribute_name_index_buf = [0; 2];
         buf_reader.read_exact(&mut attribute_name_index_buf)?;
         let attribute_name_index = u16::from_be_bytes(attribute_name_index_buf);
         let attribute_name = match &constant_pool_info[attribute_name_index as usize - 1] {
-            CpInfo::ConstantUtf8 { length: _, bytes } => String::from_utf8(bytes.clone()).expect("Invalid UTF-8 in attribute name in class file"),
+            ConstantPoolInfo::ConstantUtf8 { length: _, bytes } => String::from_utf8(bytes.clone()).expect("Invalid UTF-8 in attribute name in class file"),
             _ => panic!("Invalid constant pool entry for attribute name index in class file"),
         };
 
@@ -1880,7 +1813,7 @@ pub struct RecordComponentInfo {
 }
 
 impl RecordComponentInfo {
-    pub fn from_reader<R: BufRead>(buf_reader: &mut R, constant_pool_info: &Vec<CpInfo>) -> Result<Self> {
+    pub fn from_reader<R: BufRead>(buf_reader: &mut R, constant_pool_info: &Vec<ConstantPoolInfo>) -> Result<Self> {
         let mut name_index_buf = [0; 2];
         buf_reader.read_exact(&mut name_index_buf)?;
         let name_index = u16::from_be_bytes(name_index_buf);

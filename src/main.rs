@@ -6,6 +6,10 @@ use std::io::BufReader;
 mod class_file;
 use class_file::class_file::ClassFile;
 
+mod runtime;
+
+mod const_pool;
+
 #[derive(Parser, Debug)]
 #[command(author, version, about)]
 struct Args {
@@ -33,7 +37,7 @@ fn main() {
     let mut reader = BufReader::new(file);
 
     let class_file = ClassFile::from_reader(&mut reader);
-    debug!("Parsed class file: {:?}", class_file);
+    println!("Parsed class file: {:#?}", class_file);
 
     println!("DONE.");
 }
