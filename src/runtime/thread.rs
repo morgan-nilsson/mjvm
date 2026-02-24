@@ -1,3 +1,4 @@
+use core::panic;
 use std::sync::{Arc, Mutex};
 use crate::runtime::reference_table::Reference;
 use log::warn;
@@ -17,6 +18,10 @@ impl Thread {
     }
 
     pub fn read_short_from_pc(&mut self) -> Option<u16> {
+        todo!()
+    }
+
+    pub fn read_int_from_pc(&mut self) -> Option<u32> {
         todo!()
     }
 
@@ -55,8 +60,8 @@ impl ThreadStack {
         self.stack.push(value as u8);
     }
 
-    pub fn pop_byte(&mut self) -> Option<u8> {
-        self.stack.pop()
+    pub fn pop_byte(&mut self) -> Option<i8> {
+        self.stack.pop().map(|b| b as i8)
     }
 
     // short = i16
