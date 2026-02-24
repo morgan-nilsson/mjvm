@@ -2405,3 +2405,1542 @@ fn wide(thread: &mut Thread) -> Result<(), InstructionError> {
     Ok(())
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::runtime::thread::{JVMHeap, MethodArea, NativeMethodStack, Thread, ThreadStack};
+    use std::sync::{Arc, Mutex};
+
+    fn make_thread() -> Thread {
+        Thread {
+            pc: 0,
+            thread_stack: ThreadStack::new(),
+            jvm_heap: Arc::new(Mutex::new(JVMHeap {})),
+            method_area: Arc::new(Mutex::new(MethodArea {})),
+            native_method_stack: NativeMethodStack {},
+            wide_mode: false,
+        }
+    }
+
+    // ── 0x00  nop ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_nop_returns_ok_and_leaves_stack_empty() {
+        let mut t = make_thread();
+        assert!(nop(&mut t).is_ok());
+        assert!(t.thread_stack.pop_int().is_none());
+    }
+
+    // ── 0x01  aconst_null ─────────────────────────────────────────────────────
+
+    #[test]
+    fn test_aconst_null_pushes_null_reference() {
+        let mut t = make_thread();
+        assert!(aconst_null(&mut t).is_ok());
+        let r = t.thread_stack.pop_ref().unwrap();
+        assert!(r.is_null());
+    }
+
+    // ── 0x02–0x08  iconst ─────────────────────────────────────────────────────
+
+    #[test]
+    fn test_iconst_m1_pushes_negative_one() {
+        let mut t = make_thread();
+        assert!(iconst_m1(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop_int().unwrap(), -1);
+    }
+
+    #[test]
+    fn test_iconst_0_pushes_zero() {
+        let mut t = make_thread();
+        assert!(iconst_0(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop_int().unwrap(), 0);
+    }
+
+    #[test]
+    fn test_iconst_1_pushes_one() {
+        let mut t = make_thread();
+        assert!(iconst_1(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop_int().unwrap(), 1);
+    }
+
+    #[test]
+    fn test_iconst_2_pushes_two() {
+        let mut t = make_thread();
+        assert!(iconst_2(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop_int().unwrap(), 2);
+    }
+
+    #[test]
+    fn test_iconst_3_pushes_three() {
+        let mut t = make_thread();
+        assert!(iconst_3(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop_int().unwrap(), 3);
+    }
+
+    #[test]
+    fn test_iconst_4_pushes_four() {
+        let mut t = make_thread();
+        assert!(iconst_4(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop_int().unwrap(), 4);
+    }
+
+    #[test]
+    fn test_iconst_5_pushes_five() {
+        let mut t = make_thread();
+        assert!(iconst_5(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop_int().unwrap(), 5);
+    }
+
+    // ── 0x09–0x0a  lconst ─────────────────────────────────────────────────────
+
+    #[test]
+    fn test_lconst_0_pushes_zero_long() {
+        let mut t = make_thread();
+        assert!(lconst_0(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop_long().unwrap(), 0i64);
+    }
+
+    #[test]
+    fn test_lconst_1_pushes_one_long() {
+        let mut t = make_thread();
+        assert!(lconst_1(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop_long().unwrap(), 1i64);
+    }
+
+    // ── 0x0b–0x0d  fconst ─────────────────────────────────────────────────────
+
+    #[test]
+    fn test_fconst_0_pushes_zero_float() {
+        let mut t = make_thread();
+        assert!(fconst_0(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop_float().unwrap(), 0.0f32);
+    }
+
+    #[test]
+    fn test_fconst_1_pushes_one_float() {
+        let mut t = make_thread();
+        assert!(fconst_1(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop_float().unwrap(), 1.0f32);
+    }
+
+    #[test]
+    fn test_fconst_2_pushes_two_float() {
+        let mut t = make_thread();
+        assert!(fconst_2(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop_float().unwrap(), 2.0f32);
+    }
+
+    // ── 0x0e–0x0f  dconst ─────────────────────────────────────────────────────
+
+    #[test]
+    fn test_dconst_0_pushes_zero_double() {
+        let mut t = make_thread();
+        assert!(dconst_0(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop_double().unwrap(), 0.0f64);
+    }
+
+    #[test]
+    fn test_dconst_1_pushes_one_double() {
+        let mut t = make_thread();
+        assert!(dconst_1(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop_double().unwrap(), 1.0f64);
+    }
+
+    // ── 0x10  bipush ──────────────────────────────────────────────────────────
+
+    #[test]
+    #[should_panic]
+    fn test_bipush_unimplemented() {
+        let _ = bipush(&mut make_thread());
+    }
+
+    // ── 0x11  sipush ──────────────────────────────────────────────────────────
+
+    #[test]
+    #[should_panic]
+    fn test_sipush_unimplemented() {
+        let _ = sipush(&mut make_thread());
+    }
+
+    // ── 0x12–0x14  ldc / ldc_w / ldc2_w ──────────────────────────────────────
+
+    #[test]
+    #[should_panic]
+    fn test_ldc_unimplemented() {
+        let _ = ldc(&mut make_thread());
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_ldc_w_unimplemented() {
+        let _ = ldc_w(&mut make_thread());
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_ldc2_w_unimplemented() {
+        let _ = ldc2_w(&mut make_thread());
+    }
+
+    // ── 0x15–0x19  generic loads ──────────────────────────────────────────────
+
+    #[test]
+    #[should_panic]
+    fn test_iload_unimplemented() {
+        let _ = iload(&mut make_thread());
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_lload_unimplemented() {
+        let _ = lload(&mut make_thread());
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_fload_unimplemented() {
+        let _ = fload(&mut make_thread());
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_dload_unimplemented() {
+        let _ = dload(&mut make_thread());
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_aload_unimplemented() {
+        let _ = aload(&mut make_thread());
+    }
+
+    // ── 0x1a–0x2d  indexed loads ──────────────────────────────────────────────
+
+    #[test]
+    #[should_panic]
+    fn test_iload_0_unimplemented() { let _ = iload_0(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_iload_1_unimplemented() { let _ = iload_1(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_iload_2_unimplemented() { let _ = iload_2(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_iload_3_unimplemented() { let _ = iload_3(&mut make_thread()); }
+
+    #[test]
+    #[should_panic]
+    fn test_lload_0_unimplemented() { let _ = lload_0(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_lload_1_unimplemented() { let _ = lload_1(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_lload_2_unimplemented() { let _ = lload_2(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_lload_3_unimplemented() { let _ = lload_3(&mut make_thread()); }
+
+    #[test]
+    #[should_panic]
+    fn test_fload_0_unimplemented() { let _ = fload_0(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_fload_1_unimplemented() { let _ = fload_1(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_fload_2_unimplemented() { let _ = fload_2(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_fload_3_unimplemented() { let _ = fload_3(&mut make_thread()); }
+
+    #[test]
+    #[should_panic]
+    fn test_dload_0_unimplemented() { let _ = dload_0(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_dload_1_unimplemented() { let _ = dload_1(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_dload_2_unimplemented() { let _ = dload_2(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_dload_3_unimplemented() { let _ = dload_3(&mut make_thread()); }
+
+    #[test]
+    #[should_panic]
+    fn test_aload_0_unimplemented() { let _ = aload_0(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_aload_1_unimplemented() { let _ = aload_1(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_aload_2_unimplemented() { let _ = aload_2(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_aload_3_unimplemented() { let _ = aload_3(&mut make_thread()); }
+
+    // ── 0x2e–0x35  array loads ────────────────────────────────────────────────
+
+    #[test]
+    fn test_iaload_null_ref_throws() {
+        let mut t = make_thread();
+        t.thread_stack.push_ref(0);
+        t.thread_stack.push_int(0);
+        assert!(matches!(iaload(&mut t), Err(InstructionError::NullPointerException)));
+    }
+    #[test]
+    #[should_panic]
+    fn test_iaload_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_ref(1);
+        t.thread_stack.push_int(0);
+        let _ = iaload(&mut t);
+    }
+
+    #[test]
+    fn test_laload_null_ref_throws() {
+        let mut t = make_thread();
+        t.thread_stack.push_ref(0);
+        t.thread_stack.push_int(0);
+        assert!(matches!(laload(&mut t), Err(InstructionError::NullPointerException)));
+    }
+    #[test]
+    #[should_panic]
+    fn test_laload_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_ref(1);
+        t.thread_stack.push_int(0);
+        let _ = laload(&mut t);
+    }
+
+    #[test]
+    fn test_faload_null_ref_throws() {
+        let mut t = make_thread();
+        t.thread_stack.push_ref(0);
+        t.thread_stack.push_int(0);
+        assert!(matches!(faload(&mut t), Err(InstructionError::NullPointerException)));
+    }
+    #[test]
+    #[should_panic]
+    fn test_faload_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_ref(1);
+        t.thread_stack.push_int(0);
+        let _ = faload(&mut t);
+    }
+
+    #[test]
+    fn test_daload_null_ref_throws() {
+        let mut t = make_thread();
+        t.thread_stack.push_ref(0);
+        t.thread_stack.push_int(0);
+        assert!(matches!(daload(&mut t), Err(InstructionError::NullPointerException)));
+    }
+    #[test]
+    #[should_panic]
+    fn test_daload_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_ref(1);
+        t.thread_stack.push_int(0);
+        let _ = daload(&mut t);
+    }
+
+    #[test]
+    fn test_aaload_null_ref_throws() {
+        let mut t = make_thread();
+        t.thread_stack.push_ref(0);
+        t.thread_stack.push_int(0);
+        assert!(matches!(aaload(&mut t), Err(InstructionError::NullPointerException)));
+    }
+    #[test]
+    #[should_panic]
+    fn test_aaload_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_ref(1);
+        t.thread_stack.push_int(0);
+        let _ = aaload(&mut t);
+    }
+
+    #[test]
+    fn test_baload_null_ref_throws() {
+        let mut t = make_thread();
+        t.thread_stack.push_ref(0);
+        t.thread_stack.push_int(0);
+        assert!(matches!(baload(&mut t), Err(InstructionError::NullPointerException)));
+    }
+    #[test]
+    #[should_panic]
+    fn test_baload_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_ref(1);
+        t.thread_stack.push_int(0);
+        let _ = baload(&mut t);
+    }
+
+    #[test]
+    fn test_caload_null_ref_throws() {
+        let mut t = make_thread();
+        t.thread_stack.push_ref(0);
+        t.thread_stack.push_int(0);
+        assert!(matches!(caload(&mut t), Err(InstructionError::NullPointerException)));
+    }
+    #[test]
+    #[should_panic]
+    fn test_caload_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_ref(1);
+        t.thread_stack.push_int(0);
+        let _ = caload(&mut t);
+    }
+
+    #[test]
+    fn test_saload_null_ref_throws() {
+        let mut t = make_thread();
+        t.thread_stack.push_ref(0);
+        t.thread_stack.push_int(0);
+        assert!(matches!(saload(&mut t), Err(InstructionError::NullPointerException)));
+    }
+    #[test]
+    #[should_panic]
+    fn test_saload_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_ref(1);
+        t.thread_stack.push_int(0);
+        let _ = saload(&mut t);
+    }
+
+    // ── 0x36–0x3a  generic stores ─────────────────────────────────────────────
+
+    #[test]
+    #[should_panic]
+    fn test_istore_unimplemented() { let _ = istore(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_lstore_unimplemented() { let _ = lstore(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_fstore_unimplemented() { let _ = fstore(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_dstore_unimplemented() { let _ = dstore(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_astore_unimplemented() { let _ = astore(&mut make_thread()); }
+
+    // ── 0x3b–0x4e  indexed stores ─────────────────────────────────────────────
+
+    #[test]
+    #[should_panic]
+    fn test_istore_0_unimplemented() { let _ = istore_0(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_istore_1_unimplemented() { let _ = istore_1(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_istore_2_unimplemented() { let _ = istore_2(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_istore_3_unimplemented() { let _ = istore_3(&mut make_thread()); }
+
+    #[test]
+    #[should_panic]
+    fn test_lstore_0_unimplemented() { let _ = lstore_0(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_lstore_1_unimplemented() { let _ = lstore_1(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_lstore_2_unimplemented() { let _ = lstore_2(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_lstore_3_unimplemented() { let _ = lstore_3(&mut make_thread()); }
+
+    #[test]
+    #[should_panic]
+    fn test_fstore_0_unimplemented() { let _ = fstore_0(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_fstore_1_unimplemented() { let _ = fstore_1(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_fstore_2_unimplemented() { let _ = fstore_2(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_fstore_3_unimplemented() { let _ = fstore_3(&mut make_thread()); }
+
+    #[test]
+    #[should_panic]
+    fn test_dstore_0_unimplemented() { let _ = dstore_0(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_dstore_1_unimplemented() { let _ = dstore_1(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_dstore_2_unimplemented() { let _ = dstore_2(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_dstore_3_unimplemented() { let _ = dstore_3(&mut make_thread()); }
+
+    #[test]
+    #[should_panic]
+    fn test_astore_0_unimplemented() { let _ = astore_0(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_astore_1_unimplemented() { let _ = astore_1(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_astore_2_unimplemented() { let _ = astore_2(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_astore_3_unimplemented() { let _ = astore_3(&mut make_thread()); }
+
+    // ── 0x4f–0x56  array stores ───────────────────────────────────────────────
+
+    #[test]
+    fn test_iastore_null_ref_throws() {
+        let mut t = make_thread();
+        t.thread_stack.push_ref(0);
+        t.thread_stack.push_int(0);
+        t.thread_stack.push_int(42);
+        assert!(matches!(iastore(&mut t), Err(InstructionError::NullPointerException)));
+    }
+    #[test]
+    #[should_panic]
+    fn test_iastore_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_ref(1);
+        t.thread_stack.push_int(0);
+        t.thread_stack.push_int(42);
+        let _ = iastore(&mut t);
+    }
+
+    #[test]
+    fn test_lastore_null_ref_throws() {
+        let mut t = make_thread();
+        t.thread_stack.push_ref(0);
+        t.thread_stack.push_int(0);
+        t.thread_stack.push_long(42);
+        assert!(matches!(lastore(&mut t), Err(InstructionError::NullPointerException)));
+    }
+    #[test]
+    #[should_panic]
+    fn test_lastore_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_ref(1);
+        t.thread_stack.push_int(0);
+        t.thread_stack.push_long(42);
+        let _ = lastore(&mut t);
+    }
+
+    #[test]
+    fn test_fastore_null_ref_throws() {
+        let mut t = make_thread();
+        t.thread_stack.push_ref(0);
+        t.thread_stack.push_int(0);
+        t.thread_stack.push_float(1.0);
+        assert!(matches!(fastore(&mut t), Err(InstructionError::NullPointerException)));
+    }
+    #[test]
+    #[should_panic]
+    fn test_fastore_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_ref(1);
+        t.thread_stack.push_int(0);
+        t.thread_stack.push_float(1.0);
+        let _ = fastore(&mut t);
+    }
+
+    #[test]
+    fn test_dastore_null_ref_throws() {
+        let mut t = make_thread();
+        t.thread_stack.push_ref(0);
+        t.thread_stack.push_int(0);
+        t.thread_stack.push_double(1.0);
+        assert!(matches!(dastore(&mut t), Err(InstructionError::NullPointerException)));
+    }
+    #[test]
+    #[should_panic]
+    fn test_dastore_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_ref(1);
+        t.thread_stack.push_int(0);
+        t.thread_stack.push_double(1.0);
+        let _ = dastore(&mut t);
+    }
+
+    #[test]
+    fn test_aastore_null_ref_throws() {
+        let mut t = make_thread();
+        t.thread_stack.push_ref(0);
+        t.thread_stack.push_int(0);
+        t.thread_stack.push_ref(5);
+        assert!(matches!(aastore(&mut t), Err(InstructionError::NullPointerException)));
+    }
+    #[test]
+    #[should_panic]
+    fn test_aastore_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_ref(1);
+        t.thread_stack.push_int(0);
+        t.thread_stack.push_ref(5);
+        let _ = aastore(&mut t);
+    }
+
+    #[test]
+    fn test_bastore_null_ref_throws() {
+        let mut t = make_thread();
+        t.thread_stack.push_ref(0);
+        t.thread_stack.push_int(0);
+        t.thread_stack.push_int(1);
+        assert!(matches!(bastore(&mut t), Err(InstructionError::NullPointerException)));
+    }
+    #[test]
+    #[should_panic]
+    fn test_bastore_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_ref(1);
+        t.thread_stack.push_int(0);
+        t.thread_stack.push_int(1);
+        let _ = bastore(&mut t);
+    }
+
+    #[test]
+    fn test_castore_null_ref_throws() {
+        let mut t = make_thread();
+        t.thread_stack.push_ref(0);
+        t.thread_stack.push_int(0);
+        t.thread_stack.push_int(65);
+        assert!(matches!(castore(&mut t), Err(InstructionError::NullPointerException)));
+    }
+    #[test]
+    #[should_panic]
+    fn test_castore_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_ref(1);
+        t.thread_stack.push_int(0);
+        t.thread_stack.push_int(65);
+        let _ = castore(&mut t);
+    }
+
+    #[test]
+    fn test_sastore_null_ref_throws() {
+        let mut t = make_thread();
+        t.thread_stack.push_ref(0);
+        t.thread_stack.push_int(0);
+        t.thread_stack.push_int(100);
+        assert!(matches!(sastore(&mut t), Err(InstructionError::NullPointerException)));
+    }
+    #[test]
+    #[should_panic]
+    fn test_sastore_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_ref(1);
+        t.thread_stack.push_int(0);
+        t.thread_stack.push_int(100);
+        let _ = sastore(&mut t);
+    }
+
+    // ── 0x57  pop ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_pop_removes_top_short() {
+        let mut t = make_thread();
+        t.thread_stack.push_short(42);
+        assert!(pop(&mut t).is_ok());
+        assert!(t.thread_stack.pop_short().is_none());
+    }
+
+    #[test]
+    fn test_pop_empty_stack_returns_internal_error() {
+        let mut t = make_thread();
+        assert!(matches!(pop(&mut t), Err(InstructionError::InternalError)));
+    }
+
+    // ── 0x58  pop2 ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_pop2_removes_two_shorts() {
+        let mut t = make_thread();
+        t.thread_stack.push_short(1);
+        t.thread_stack.push_short(2);
+        assert!(pop2(&mut t).is_ok());
+        assert!(t.thread_stack.pop_short().is_none());
+    }
+
+    #[test]
+    fn test_pop2_empty_stack_returns_internal_error() {
+        let mut t = make_thread();
+        assert!(matches!(pop2(&mut t), Err(InstructionError::InternalError)));
+    }
+
+    // ── 0x59–0x5e  dup variants ───────────────────────────────────────────────
+
+    #[test]
+    #[should_panic]
+    fn test_dup_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_ref(1);
+        let _ = dup(&mut t);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_dup_x1_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_ref(1);
+        t.thread_stack.push_ref(2);
+        let _ = dup_x1(&mut t);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_dup_x2_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_ref(1);
+        t.thread_stack.push_ref(2);
+        t.thread_stack.push_ref(3);
+        let _ = dup_x2(&mut t);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_dup2_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_ref(1);
+        t.thread_stack.push_ref(2);
+        let _ = dup2(&mut t);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_dup2_x1_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_ref(1);
+        t.thread_stack.push_ref(2);
+        t.thread_stack.push_ref(3);
+        let _ = dup2_x1(&mut t);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_dup2_x2_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_ref(1);
+        t.thread_stack.push_ref(2);
+        t.thread_stack.push_ref(3);
+        t.thread_stack.push_ref(4);
+        let _ = dup2_x2(&mut t);
+    }
+
+    // ── 0x5f  swap ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_swap_reverses_top_two_shorts() {
+        let mut t = make_thread();
+        t.thread_stack.push_short(10);
+        t.thread_stack.push_short(20);
+        assert!(swap(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop_short().unwrap(), 10);
+        assert_eq!(t.thread_stack.pop_short().unwrap(), 20);
+    }
+
+    #[test]
+    fn test_swap_empty_stack_returns_internal_error() {
+        let mut t = make_thread();
+        assert!(matches!(swap(&mut t), Err(InstructionError::InternalError)));
+    }
+
+    // ── 0x60–0x63  add ────────────────────────────────────────────────────────
+
+    #[test]
+    #[should_panic]
+    fn test_iadd_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_int(1);
+        t.thread_stack.push_int(2);
+        let _ = iadd(&mut t);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_ladd_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_long(1);
+        t.thread_stack.push_long(2);
+        let _ = ladd(&mut t);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_fadd_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_float(1.0);
+        t.thread_stack.push_float(2.0);
+        let _ = fadd(&mut t);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_dadd_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_double(1.0);
+        t.thread_stack.push_double(2.0);
+        let _ = dadd(&mut t);
+    }
+
+    // ── 0x64–0x67  sub ────────────────────────────────────────────────────────
+
+    #[test]
+    #[should_panic]
+    fn test_isub_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_int(5);
+        t.thread_stack.push_int(3);
+        let _ = isub(&mut t);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_lsub_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_long(5);
+        t.thread_stack.push_long(3);
+        let _ = lsub(&mut t);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_fsub_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_float(5.0);
+        t.thread_stack.push_float(3.0);
+        let _ = fsub(&mut t);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_dsub_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_double(5.0);
+        t.thread_stack.push_double(3.0);
+        let _ = dsub(&mut t);
+    }
+
+    // ── 0x68–0x6b  mul ────────────────────────────────────────────────────────
+
+    #[test]
+    #[should_panic]
+    fn test_imul_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_int(3);
+        t.thread_stack.push_int(4);
+        let _ = imul(&mut t);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_lmul_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_long(3);
+        t.thread_stack.push_long(4);
+        let _ = lmul(&mut t);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_fmul_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_float(3.0);
+        t.thread_stack.push_float(4.0);
+        let _ = fmul(&mut t);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_dmul_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_double(3.0);
+        t.thread_stack.push_double(4.0);
+        let _ = dmul(&mut t);
+    }
+
+    // ── 0x6c–0x6f  div ────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_idiv_by_zero_returns_arithmetic_exception() {
+        let mut t = make_thread();
+        t.thread_stack.push_int(10);
+        t.thread_stack.push_int(0);
+        assert!(matches!(idiv(&mut t), Err(InstructionError::ArithmeticException)));
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_idiv_nonzero_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_int(10);
+        t.thread_stack.push_int(2);
+        let _ = idiv(&mut t);
+    }
+
+    #[test]
+    fn test_ldiv_by_zero_returns_arithmetic_exception() {
+        let mut t = make_thread();
+        t.thread_stack.push_long(10);
+        t.thread_stack.push_long(0);
+        assert!(matches!(ldiv(&mut t), Err(InstructionError::ArithmeticException)));
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_ldiv_nonzero_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_long(10);
+        t.thread_stack.push_long(2);
+        let _ = ldiv(&mut t);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_fdiv_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_float(10.0);
+        t.thread_stack.push_float(2.0);
+        let _ = fdiv(&mut t);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_ddiv_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_double(10.0);
+        t.thread_stack.push_double(2.0);
+        let _ = ddiv(&mut t);
+    }
+
+    // ── 0x70–0x73  rem ────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_irem_by_zero_returns_arithmetic_exception() {
+        let mut t = make_thread();
+        t.thread_stack.push_int(10);
+        t.thread_stack.push_int(0);
+        assert!(matches!(irem(&mut t), Err(InstructionError::ArithmeticException)));
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_irem_nonzero_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_int(10);
+        t.thread_stack.push_int(3);
+        let _ = irem(&mut t);
+    }
+
+    #[test]
+    fn test_lrem_by_zero_returns_arithmetic_exception() {
+        let mut t = make_thread();
+        t.thread_stack.push_long(10);
+        t.thread_stack.push_long(0);
+        assert!(matches!(lrem(&mut t), Err(InstructionError::ArithmeticException)));
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_lrem_nonzero_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_long(10);
+        t.thread_stack.push_long(3);
+        let _ = lrem(&mut t);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_frem_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_float(10.0);
+        t.thread_stack.push_float(3.0);
+        let _ = frem(&mut t);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_drem_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_double(10.0);
+        t.thread_stack.push_double(3.0);
+        let _ = drem(&mut t);
+    }
+
+    // ── 0x74–0x77  neg ────────────────────────────────────────────────────────
+
+    #[test]
+    #[should_panic]
+    fn test_ineg_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_int(5);
+        let _ = ineg(&mut t);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_lneg_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_long(5);
+        let _ = lneg(&mut t);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_fneg_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_float(5.0);
+        let _ = fneg(&mut t);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_dneg_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_double(5.0);
+        let _ = dneg(&mut t);
+    }
+
+    // ── 0x78–0x7d  shifts ─────────────────────────────────────────────────────
+
+    #[test]
+    #[should_panic]
+    fn test_ishl_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_int(1);
+        t.thread_stack.push_int(2);
+        let _ = ishl(&mut t);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_lshl_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_long(1); // value1 (long)
+        t.thread_stack.push_int(2);  // value2 (int shift amount)
+        let _ = lshl(&mut t);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_ishr_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_int(8);
+        t.thread_stack.push_int(2);
+        let _ = ishr(&mut t);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_lshr_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_long(8); // value1 (long)
+        t.thread_stack.push_int(2);  // value2 (int shift amount)
+        let _ = lshr(&mut t);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_iushr_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_int(8);
+        t.thread_stack.push_int(2);
+        let _ = iushr(&mut t);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_lushr_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_long(8); // value1 (long)
+        t.thread_stack.push_int(2);  // value2 (int shift amount)
+        let _ = lushr(&mut t);
+    }
+
+    // ── 0x7e–0x83  bitwise ────────────────────────────────────────────────────
+
+    #[test]
+    #[should_panic]
+    fn test_iand_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_int(0b1010);
+        t.thread_stack.push_int(0b1100);
+        let _ = iand(&mut t);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_land_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_long(0b1010);
+        t.thread_stack.push_long(0b1100);
+        let _ = land(&mut t);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_ior_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_int(0b1010);
+        t.thread_stack.push_int(0b1100);
+        let _ = ior(&mut t);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_lor_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_long(0b1010);
+        t.thread_stack.push_long(0b1100);
+        let _ = lor(&mut t);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_ixor_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_int(0b1010);
+        t.thread_stack.push_int(0b1100);
+        let _ = ixor(&mut t);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_lxor_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_long(0b1010);
+        t.thread_stack.push_long(0b1100);
+        let _ = lxor(&mut t);
+    }
+
+    // ── 0x84  iinc ────────────────────────────────────────────────────────────
+
+    #[test]
+    #[should_panic]
+    fn test_iinc_unimplemented() {
+        let _ = iinc(&mut make_thread());
+    }
+
+    // ── 0x85–0x93  type conversions ───────────────────────────────────────────
+
+    #[test]
+    #[should_panic]
+    fn test_i2l_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_int(5);
+        let _ = i2l(&mut t);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_i2f_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_int(5);
+        let _ = i2f(&mut t);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_i2d_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_int(5);
+        let _ = i2d(&mut t);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_l2i_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_long(5);
+        let _ = l2i(&mut t);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_l2f_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_long(5);
+        let _ = l2f(&mut t);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_l2d_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_long(5);
+        let _ = l2d(&mut t);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_f2i_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_float(5.0);
+        let _ = f2i(&mut t);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_f2l_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_float(5.0);
+        let _ = f2l(&mut t);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_f2d_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_float(5.0);
+        let _ = f2d(&mut t);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_d2i_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_double(5.0);
+        let _ = d2i(&mut t);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_d2l_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_double(5.0);
+        let _ = d2l(&mut t);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_d2f_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_double(5.0);
+        let _ = d2f(&mut t);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_i2b_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_int(5);
+        let _ = i2b(&mut t);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_i2c_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_int(65);
+        let _ = i2c(&mut t);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_i2s_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_int(5);
+        let _ = i2s(&mut t);
+    }
+
+    // ── 0x94–0x98  comparisons ────────────────────────────────────────────────
+
+    #[test]
+    #[should_panic]
+    fn test_lcmp_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_long(1);
+        t.thread_stack.push_long(2);
+        let _ = lcmp(&mut t);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_fcmpl_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_float(1.0);
+        t.thread_stack.push_float(2.0);
+        let _ = fcmpl(&mut t);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_fcmpg_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_float(1.0);
+        t.thread_stack.push_float(2.0);
+        let _ = fcmpg(&mut t);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_dcmpl_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_double(1.0);
+        t.thread_stack.push_double(2.0);
+        let _ = dcmpl(&mut t);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_dcmpg_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_double(1.0);
+        t.thread_stack.push_double(2.0);
+        let _ = dcmpg(&mut t);
+    }
+
+    // ── 0x99–0xa6  branches ───────────────────────────────────────────────────
+
+    #[test]
+    #[should_panic]
+    fn test_ifeq_unimplemented() { let _ = ifeq(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_ifne_unimplemented() { let _ = ifne(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_iflt_unimplemented() { let _ = iflt(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_ifge_unimplemented() { let _ = ifge(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_ifgt_unimplemented() { let _ = ifgt(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_ifle_unimplemented() { let _ = ifle(&mut make_thread()); }
+
+    #[test]
+    #[should_panic]
+    fn test_if_icmpeq_unimplemented() { let _ = if_icmpeq(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_if_icmpne_unimplemented() { let _ = if_icmpne(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_if_icmplt_unimplemented() { let _ = if_icmplt(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_if_icmpge_unimplemented() { let _ = if_icmpge(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_if_icmpgt_unimplemented() { let _ = if_icmpgt(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_if_icmple_unimplemented() { let _ = if_icmple(&mut make_thread()); }
+
+    #[test]
+    #[should_panic]
+    fn test_if_acmpeq_unimplemented() { let _ = if_acmpeq(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_if_acmpne_unimplemented() { let _ = if_acmpne(&mut make_thread()); }
+
+    // ── 0xa7–0xa9  control flow ───────────────────────────────────────────────
+
+    #[test]
+    #[should_panic]
+    fn test_goto_unimplemented() { let _ = goto(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_jsr_unimplemented() { let _ = jsr(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_ret_unimplemented() { let _ = ret(&mut make_thread()); }
+
+    // ── 0xaa–0xab  switch ─────────────────────────────────────────────────────
+
+    #[test]
+    #[should_panic]
+    fn test_tableswitch_unimplemented() { let _ = tableswitch(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_lookupswitch_unimplemented() { let _ = lookupswitch(&mut make_thread()); }
+
+    // ── 0xac–0xb1  return ─────────────────────────────────────────────────────
+
+    #[test]
+    #[should_panic]
+    fn test_ireturn_unimplemented() { let _ = ireturn(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_lreturn_unimplemented() { let _ = lreturn(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_freturn_unimplemented() { let _ = freturn(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_dreturn_unimplemented() { let _ = dreturn(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_areturn_unimplemented() { let _ = areturn(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_return_unimplemented() { let _ = return_(&mut make_thread()); }
+
+    // ── 0xb2–0xb5  field access ───────────────────────────────────────────────
+
+    #[test]
+    #[should_panic]
+    fn test_getstatic_unimplemented() { let _ = getstatic(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_putstatic_unimplemented() { let _ = putstatic(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_getfield_unimplemented() { let _ = getfield(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_putfield_unimplemented() { let _ = putfield(&mut make_thread()); }
+
+    // ── 0xb6–0xba  invokes ────────────────────────────────────────────────────
+
+    #[test]
+    #[should_panic]
+    fn test_invokevirtual_unimplemented() { let _ = invokevirtual(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_invokespecial_unimplemented() { let _ = invokespecial(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_invokestatic_unimplemented() { let _ = invokestatic(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_invokeinterface_unimplemented() { let _ = invokeinterface(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_invokedynamic_unimplemented() { let _ = invokedynamic(&mut make_thread()); }
+
+    // ── 0xbb–0xbd  array/object creation ─────────────────────────────────────
+
+    #[test]
+    #[should_panic]
+    fn test_new_unimplemented() { let _ = new(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_newarray_unimplemented() { let _ = newarray(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_anewarray_unimplemented() { let _ = anewarray(&mut make_thread()); }
+
+    // ── 0xbe  arraylength ─────────────────────────────────────────────────────
+
+    #[test]
+    fn test_arraylength_null_ref_throws() {
+        let mut t = make_thread();
+        t.thread_stack.push_ref(0);
+        assert!(matches!(arraylength(&mut t), Err(InstructionError::NullPointerException)));
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_arraylength_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_ref(1);
+        let _ = arraylength(&mut t);
+    }
+
+    // ── 0xbf  athrow ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_athrow_null_ref_throws() {
+        let mut t = make_thread();
+        t.thread_stack.push_ref(0);
+        assert!(matches!(athrow(&mut t), Err(InstructionError::NullPointerException)));
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_athrow_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_ref(1);
+        let _ = athrow(&mut t);
+    }
+
+    // ── 0xc0–0xc1  checkcast / instanceof ────────────────────────────────────
+
+    #[test]
+    #[should_panic]
+    fn test_checkcast_unimplemented() { let _ = checkcast(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_instanceof_unimplemented() { let _ = instanceof(&mut make_thread()); }
+
+    // ── 0xc2–0xc3  monitor ────────────────────────────────────────────────────
+
+    #[test]
+    fn test_monitorenter_null_ref_throws() {
+        let mut t = make_thread();
+        t.thread_stack.push_ref(0);
+        assert!(matches!(monitorenter(&mut t), Err(InstructionError::NullPointerException)));
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_monitorenter_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_ref(1);
+        let _ = monitorenter(&mut t);
+    }
+
+    #[test]
+    fn test_monitorexit_null_ref_throws() {
+        let mut t = make_thread();
+        t.thread_stack.push_ref(0);
+        assert!(matches!(monitorexit(&mut t), Err(InstructionError::NullPointerException)));
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_monitorexit_unimplemented() {
+        let mut t = make_thread();
+        t.thread_stack.push_ref(1);
+        let _ = monitorexit(&mut t);
+    }
+
+    // ── 0xc4  wide ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_wide_sets_wide_mode() {
+        let mut t = make_thread();
+        assert!(!t.wide_mode);
+        assert!(wide(&mut t).is_ok());
+        assert!(t.wide_mode);
+    }
+
+    // ── 0xc5–0xc9  extended ───────────────────────────────────────────────────
+
+    #[test]
+    #[should_panic]
+    fn test_multianewarray_unimplemented() { let _ = multianewarray(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_ifnull_unimplemented() { let _ = ifnull(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_ifnonnull_unimplemented() { let _ = ifnonnull(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_goto_w_unimplemented() { let _ = goto_w(&mut make_thread()); }
+    #[test]
+    #[should_panic]
+    fn test_jsr_w_unimplemented() { let _ = jsr_w(&mut make_thread()); }
+
+    // ── 0xca–0xff  reserved ───────────────────────────────────────────────────
+
+    #[test]
+    fn test_reserved_opcode_returns_unknown_error() {
+        let mut t = make_thread();
+        assert!(matches!(call_by_opcode(&mut t, 0xca), Err(InstructionError::UnknownError)));
+        assert!(matches!(call_by_opcode(&mut t, 0xff), Err(InstructionError::UnknownError)));
+    }
+}

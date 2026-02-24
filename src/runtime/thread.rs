@@ -165,3 +165,256 @@ pub struct MethodArea {
 pub struct NativeMethodStack {
 
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn new_stack() -> ThreadStack {
+        ThreadStack::new()
+    }
+
+    // ── int (i32) ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_push_pop_int_roundtrip() {
+        let mut s = new_stack();
+        s.push_int(42);
+        assert_eq!(s.pop_int().unwrap(), 42);
+    }
+
+    #[test]
+    fn test_push_pop_int_negative() {
+        let mut s = new_stack();
+        s.push_int(-1);
+        assert_eq!(s.pop_int().unwrap(), -1);
+    }
+
+    #[test]
+    fn test_push_pop_int_min_max() {
+        let mut s = new_stack();
+        s.push_int(i32::MIN);
+        assert_eq!(s.pop_int().unwrap(), i32::MIN);
+        s.push_int(i32::MAX);
+        assert_eq!(s.pop_int().unwrap(), i32::MAX);
+    }
+
+    #[test]
+    fn test_pop_int_empty_returns_none() {
+        let mut s = new_stack();
+        assert!(s.pop_int().is_none());
+    }
+
+    #[test]
+    fn test_int_stack_lifo_order() {
+        let mut s = new_stack();
+        s.push_int(1);
+        s.push_int(2);
+        assert_eq!(s.pop_int().unwrap(), 2);
+        assert_eq!(s.pop_int().unwrap(), 1);
+    }
+
+    // ── long (i64) ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_push_pop_long_roundtrip() {
+        let mut s = new_stack();
+        s.push_long(123456789012345);
+        assert_eq!(s.pop_long().unwrap(), 123456789012345i64);
+    }
+
+    #[test]
+    fn test_push_pop_long_negative() {
+        let mut s = new_stack();
+        s.push_long(-1i64);
+        assert_eq!(s.pop_long().unwrap(), -1i64);
+    }
+
+    #[test]
+    fn test_push_pop_long_min_max() {
+        let mut s = new_stack();
+        s.push_long(i64::MIN);
+        assert_eq!(s.pop_long().unwrap(), i64::MIN);
+        s.push_long(i64::MAX);
+        assert_eq!(s.pop_long().unwrap(), i64::MAX);
+    }
+
+    #[test]
+    fn test_pop_long_empty_returns_none() {
+        let mut s = new_stack();
+        assert!(s.pop_long().is_none());
+    }
+
+    // ── float (f32) ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_push_pop_float_roundtrip() {
+        let mut s = new_stack();
+        s.push_float(3.14f32);
+        assert_eq!(s.pop_float().unwrap(), 3.14f32);
+    }
+
+    #[test]
+    fn test_push_pop_float_zero() {
+        let mut s = new_stack();
+        s.push_float(0.0f32);
+        assert_eq!(s.pop_float().unwrap(), 0.0f32);
+    }
+
+    #[test]
+    fn test_push_pop_float_negative() {
+        let mut s = new_stack();
+        s.push_float(-1.5f32);
+        assert_eq!(s.pop_float().unwrap(), -1.5f32);
+    }
+
+    #[test]
+    fn test_pop_float_empty_returns_none() {
+        let mut s = new_stack();
+        assert!(s.pop_float().is_none());
+    }
+
+    // ── double (f64) ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_push_pop_double_roundtrip() {
+        let mut s = new_stack();
+        s.push_double(2.718281828f64);
+        assert_eq!(s.pop_double().unwrap(), 2.718281828f64);
+    }
+
+    #[test]
+    fn test_push_pop_double_zero() {
+        let mut s = new_stack();
+        s.push_double(0.0f64);
+        assert_eq!(s.pop_double().unwrap(), 0.0f64);
+    }
+
+    #[test]
+    fn test_push_pop_double_min_max() {
+        let mut s = new_stack();
+        s.push_double(f64::MIN);
+        assert_eq!(s.pop_double().unwrap(), f64::MIN);
+        s.push_double(f64::MAX);
+        assert_eq!(s.pop_double().unwrap(), f64::MAX);
+    }
+
+    #[test]
+    fn test_pop_double_empty_returns_none() {
+        let mut s = new_stack();
+        assert!(s.pop_double().is_none());
+    }
+
+    // ── short (i16) ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_push_pop_short_roundtrip() {
+        let mut s = new_stack();
+        s.push_short(1000i16);
+        assert_eq!(s.pop_short().unwrap(), 1000i16);
+    }
+
+    #[test]
+    fn test_push_pop_short_min_max() {
+        let mut s = new_stack();
+        s.push_short(i16::MIN);
+        assert_eq!(s.pop_short().unwrap(), i16::MIN);
+        s.push_short(i16::MAX);
+        assert_eq!(s.pop_short().unwrap(), i16::MAX);
+    }
+
+    #[test]
+    fn test_pop_short_empty_returns_none() {
+        let mut s = new_stack();
+        assert!(s.pop_short().is_none());
+    }
+
+    // ── byte (i8) ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_push_pop_byte_roundtrip() {
+        let mut s = new_stack();
+        s.push_byte(42i8);
+        assert_eq!(s.pop_byte().unwrap(), 42i8);
+    }
+
+    #[test]
+    fn test_push_pop_byte_negative() {
+        let mut s = new_stack();
+        s.push_byte(-1i8);
+        assert_eq!(s.pop_byte().unwrap(), -1i8);
+    }
+
+    #[test]
+    fn test_pop_byte_empty_returns_none() {
+        let mut s = new_stack();
+        assert!(s.pop_byte().is_none());
+    }
+
+    // ── char (u16 via i16) ────────────────────────────────────────────────────
+
+    #[test]
+    fn test_push_pop_char_ascii() {
+        let mut s = new_stack();
+        s.push_char('A');
+        assert_eq!(s.pop_char().unwrap(), 'A');
+    }
+
+    #[test]
+    fn test_push_pop_char_unicode() {
+        let mut s = new_stack();
+        s.push_char('€');
+        assert_eq!(s.pop_char().unwrap(), '€');
+    }
+
+    #[test]
+    fn test_pop_char_empty_returns_none() {
+        let mut s = new_stack();
+        assert!(s.pop_char().is_none());
+    }
+
+    // ── reference (u32) ──────────────────────────────────────────────────────
+
+    #[test]
+    fn test_push_pop_ref_roundtrip() {
+        let mut s = new_stack();
+        s.push_ref(99);
+        let r = s.pop_ref().unwrap();
+        assert_eq!(r.get_ref_index(), 99);
+        assert!(!r.is_null());
+    }
+
+    #[test]
+    fn test_push_pop_null_ref() {
+        let mut s = new_stack();
+        s.push_ref(0);
+        let r = s.pop_ref().unwrap();
+        assert!(r.is_null());
+    }
+
+    #[test]
+    fn test_pop_ref_empty_returns_none() {
+        let mut s = new_stack();
+        assert!(s.pop_ref().is_none());
+    }
+
+    // ── mixed type isolation ──────────────────────────────────────────────────
+
+    #[test]
+    fn test_int_and_long_do_not_alias() {
+        let mut s = new_stack();
+        s.push_int(1);
+        s.push_long(2);
+        assert_eq!(s.pop_long().unwrap(), 2i64);
+        assert_eq!(s.pop_int().unwrap(), 1i32);
+    }
+
+    #[test]
+    fn test_float_and_double_do_not_alias() {
+        let mut s = new_stack();
+        s.push_float(1.0f32);
+        s.push_double(2.0f64);
+        assert_eq!(s.pop_double().unwrap(), 2.0f64);
+        assert_eq!(s.pop_float().unwrap(), 1.0f32);
+    }
+}
