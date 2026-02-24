@@ -6,22 +6,22 @@ use crate::const_pool::constant_pool::{ConstantPoolInfo, ConstantPoolInfoTag};
 
 #[derive(Debug)]
 pub struct ClassFile {
-    magic: u32,
-    minor_version: u16,
-    major_version: u16,
-    constant_pool_count: u16,
-    constant_pool: Vec<ConstantPoolInfo>,
-    access_flags: AccessFlags,
-    this_class: u16,
-    super_class: u16,
-    interfaces_count: u16,
-    interfaces: Vec<u16>,
-    fields_count: u16,
-    fields: Vec<FieldInfo>,
-    methods_count: u16,
-    methods: Vec<ConstantPoolMethodInfo>,
-    attributes_count: u16,
-    attributes: Vec<AttributeInfo>,
+    pub magic: u32,
+    pub minor_version: u16,
+    pub major_version: u16,
+    pub constant_pool_count: u16,
+    pub constant_pool: Vec<ConstantPoolInfo>,
+    pub access_flags: AccessFlags,
+    pub this_class: u16,
+    pub super_class: u16,
+    pub interfaces_count: u16,
+    pub interfaces: Vec<u16>,
+    pub fields_count: u16,
+    pub fields: Vec<FieldInfo>,
+    pub methods_count: u16,
+    pub methods: Vec<ConstantPoolMethodInfo>,
+    pub attributes_count: u16,
+    pub attributes: Vec<AttributeInfo>,
 }
 
 impl ClassFile {
@@ -350,11 +350,11 @@ bitflags! {
 
 #[derive(Debug)]
 pub struct FieldInfo {
-    access_flags: FieldInfoAccessFlags,
-    name_index: u16,
-    descriptor_index: u16,
-    attributes_count: u16,
-    attributes: Vec<AttributeInfo>,
+    pub access_flags: FieldInfoAccessFlags,
+    pub name_index: u16,
+    pub descriptor_index: u16,
+    pub attributes_count: u16,
+    pub attributes: Vec<AttributeInfo>,
 }
 
 impl FieldInfo {
@@ -435,11 +435,11 @@ impl TryFrom<u16> for FieldInfoAccessFlags {
 
 #[derive(Debug)]
 pub struct ConstantPoolMethodInfo {
-    access_flags: MethodAccessFlags,
-    name_index: u16,
-    descriptor_index: u16,
-    attributes_count: u16,
-    attributes: Vec<AttributeInfo>,
+    pub access_flags: MethodAccessFlags,
+    pub name_index: u16,
+    pub descriptor_index: u16,
+    pub attributes_count: u16,
+    pub attributes: Vec<AttributeInfo>,
 }
 
 impl ConstantPoolMethodInfo {
@@ -1024,10 +1024,10 @@ impl AttributeInfo {
 
 #[derive(Debug)]
 pub struct ExceptionTableEntry {
-    start_pc: u16,
-    end_pc: u16,
-    handler_pc: u16,
-    catch_type: u16,
+    pub start_pc: u16,
+    pub end_pc: u16,
+    pub handler_pc: u16,
+    pub catch_type: u16,
 }
 
 impl ExceptionTableEntry {
@@ -1193,10 +1193,10 @@ impl VerificationTypeInfo {
 
 #[derive(Debug)]
 pub struct InnerClassInfo {
-    inner_class_info_index: u16,
-    outer_class_info_index: u16,
-    inner_name_index: u16,
-    inner_class_access_flags: InnerClassAccessFlags,
+    pub inner_class_info_index: u16,
+    pub outer_class_info_index: u16,
+    pub inner_name_index: u16,
+    pub inner_class_access_flags: InnerClassAccessFlags,
 }
 
 impl InnerClassInfo {
@@ -1247,8 +1247,8 @@ bitflags! {
 
 #[derive(Debug)]
 pub struct LineNumberInfo {
-    start_pc: u16,
-    line_number: u16,
+    pub start_pc: u16,
+    pub line_number: u16,
 }
 
 impl LineNumberInfo {
@@ -1270,11 +1270,11 @@ impl LineNumberInfo {
 
 #[derive(Debug)]
 pub struct LocalVariableInfo {
-    start_pc: u16,
-    length: u16,
-    name_index: u16,
-    descriptor_index: u16,
-    index: u16,
+    pub start_pc: u16,
+    pub length: u16,
+    pub name_index: u16,
+    pub descriptor_index: u16,
+    pub index: u16,
 }
 
 impl LocalVariableInfo {
@@ -1311,11 +1311,11 @@ impl LocalVariableInfo {
 
 #[derive(Debug)]
 pub struct LocalVariableTypeInfo {
-    start_pc: u16,
-    length: u16,
-    name_index: u16,
-    signature_index: u16,
-    index: u16,
+    pub start_pc: u16,
+    pub length: u16,
+    pub name_index: u16,
+    pub signature_index: u16,
+    pub index: u16,
 }
 
 impl LocalVariableTypeInfo {
@@ -1352,9 +1352,9 @@ impl LocalVariableTypeInfo {
 
 #[derive(Debug)]
 pub struct Annotation {
-    type_index: u16,
-    num_element_value_pairs: u16,
-    element_value_pairs: Vec<ElementValuePair>,
+    pub type_index: u16,
+    pub num_element_value_pairs: u16,
+    pub element_value_pairs: Vec<ElementValuePair>,
 }
 
 impl Annotation {
@@ -1388,14 +1388,14 @@ impl Annotation {
 
 #[derive(Debug)]
 pub struct ElementValuePair {
-    element_name_index: u16,
-    value: ElementValue,
+    pub element_name_index: u16,
+    pub value: ElementValue,
 }
 
 #[derive(Debug)]
 pub struct ParameterAnnotations {
-    num_annotations: u16,
-    annotations: Vec<Annotation>,
+    pub num_annotations: u16,
+    pub annotations: Vec<Annotation>,
 }
 
 impl ParameterAnnotations {
@@ -1419,18 +1419,17 @@ impl ParameterAnnotations {
 
 #[derive(Debug)]
 pub struct TypeAnnotation {
-    type_annotation_target: TypeAnnotationTarget,
-    type_path: TypePath,
-    type_index: u16,
-    num_element_value_pairs: u16,
-    element_value_pairs: Vec<ElementValuePair>,
+    pub type_annotation_target: TypeAnnotationTarget,
+    pub type_path: TypePath,
+    pub type_index: u16,
+    pub num_element_value_pairs: u16,
+    pub element_value_pairs: Vec<ElementValuePair>,
 }
 
 impl TypeAnnotation {
     pub fn from_reader<R: BufRead>(buf_reader: &mut R) -> Result<Self> {
         todo!("TypeAnnotation parsing not implemented yet");
     }
-    
 }
 
 
@@ -1463,8 +1462,8 @@ pub struct LocalvarTargetTableEntry {
 
 #[derive(Debug)]
 pub struct TypePath {
-    path_length: u8,
-    paths: Vec<TypePathEntry>,
+    pub path_length: u8,
+    pub paths: Vec<TypePathEntry>,
 }
 
 impl TypePath {
@@ -1495,8 +1494,8 @@ impl TypePath {
 
 #[derive(Debug)]
 pub struct TypePathEntry {
-    type_path_kind: u8,
-    type_argument_index: u8,
+    pub type_path_kind: u8,
+    pub type_argument_index: u8,
 }
 
 #[derive(Debug)]
@@ -1568,9 +1567,9 @@ impl ElementValue {
 
 #[derive(Debug)]
 pub struct BootstrapMethod {
-    bootstrap_method_ref: u16,
-    num_bootstrap_arguments: u16,
-    bootstrap_arguments: Vec<u16>,
+    pub bootstrap_method_ref: u16,
+    pub num_bootstrap_arguments: u16,
+    pub bootstrap_arguments: Vec<u16>,
 }
 
 impl BootstrapMethod {
@@ -1601,8 +1600,8 @@ impl BootstrapMethod {
 
 #[derive(Debug)]
 pub struct MethodParameter {
-    name_index: u16,
-    access_flags: MethodParameterAccessFlags,
+    pub name_index: u16,
+    pub access_flags: MethodParameterAccessFlags,
 }
 
 impl MethodParameter {
@@ -1633,9 +1632,9 @@ bitflags! {
 
 #[derive(Debug)]
 pub struct ModuleRequire {
-    required_module_index: u16,
-    required_flags: ModuleRequireFlags,
-    required_version_index: u16,
+    pub required_module_index: u16,
+    pub required_flags: ModuleRequireFlags,
+    pub required_version_index: u16,
 }
 
 impl ModuleRequire {
@@ -1675,10 +1674,10 @@ bitflags! {
 
 #[derive(Debug)]
 pub struct ModuleExport {
-    exported_package_index: u16,
-    export_flags: ModuleExportFlags,
-    exported_to_count: u16,
-    exported_to_index: Vec<u16>,
+    pub exported_package_index: u16,
+    pub export_flags: ModuleExportFlags,
+    pub exported_to_count: u16,
+    pub exported_to_index: Vec<u16>,
 }
 
 impl ModuleExport {
@@ -1725,10 +1724,10 @@ bitflags! {
 
 #[derive(Debug)]
 pub struct ModuleOpen {
-    opens_index: u16,
-    opens_flags: ModuleOpensFlags,
-    opens_to_count: u16,
-    opens_to_index: Vec<u16>,
+    pub opens_index: u16,
+    pub opens_flags: ModuleOpensFlags,
+    pub opens_to_count: u16,
+    pub opens_to_index: Vec<u16>,
 }
 
 impl ModuleOpen {
@@ -1773,9 +1772,9 @@ bitflags! {
 
 #[derive(Debug)]
 pub struct ModuleProvide {
-    provided_service_index: u16,
-    provides_with_count: u16,
-    provides_with_index: Vec<u16>,
+    pub provided_service_index: u16,
+    pub provides_with_count: u16,
+    pub provides_with_index: Vec<u16>,
 }
 
 impl ModuleProvide {
@@ -1806,10 +1805,10 @@ impl ModuleProvide {
 
 #[derive(Debug)]
 pub struct RecordComponentInfo {
-    name_index: u16,
-    descriptor_index: u16,
-    attributes_count: u16,
-    attributes: Vec<AttributeInfo>,
+    pub name_index: u16,
+    pub descriptor_index: u16,
+    pub attributes_count: u16,
+    pub attributes: Vec<AttributeInfo>,
 }
 
 impl RecordComponentInfo {

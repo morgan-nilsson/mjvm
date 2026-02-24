@@ -1,14 +1,9 @@
-use clap::Parser; 
+use clap::Parser;
 use log::debug;
 use std::fs::File;
 use std::io::BufReader;
 
-mod class_file;
-use class_file::class_file::ClassFile;
-
-mod runtime;
-
-mod const_pool;
+use mjvm::class_file::class_file::ClassFile;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about)]

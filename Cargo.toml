@@ -10,3 +10,4 @@ clap = { version = "4.5.57", features = ["derive"] }
 log = "0.4.29"
 modular-bitfield = "0.13.1"
 simplelog = "0.12.2"
+thiserror = "2.0.18"
