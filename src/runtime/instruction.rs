@@ -1,7 +1,10 @@
 use crate::runtime::thread::Thread;
 use crate::runtime::reference_table::Reference;
 use crate::runtime::reference_table::NULL_REF;
+use crate::runtime::reference_table::REFERENCE_TABLE;
 
+use anyhow::Ok;
+use anyhow::Result;
 use thiserror::Error;
 
 pub fn preform_instruction(thread: &mut Thread) {
@@ -9,7 +12,7 @@ pub fn preform_instruction(thread: &mut Thread) {
 
 }
 
-fn call_by_opcode(thread: &mut Thread, opcode: u8) -> Result<(), InstructionError> {
+fn call_by_opcode(thread: &mut Thread, opcode: u8) -> Result<()> {
     match opcode {
         0x00 => { nop(thread) },
         0x01 => { aconst_null(thread) },
@@ -228,7 +231,7 @@ fn call_by_opcode(thread: &mut Thread, opcode: u8) -> Result<(), InstructionErro
         0xc9 => { jsr_w(thread) },
 
         // reserved
-        0xca..=0xff => { Err(InstructionError::UnknownError) },
+        0xca..=0xff => { Err(InstructionError::UnknownError.into()) },
 
 
     }
@@ -266,30 +269,52 @@ pub enum InstructionError {
 
 }
 
-fn aaload(thread: &mut Thread) -> Result<(), InstructionError> {
-    let index = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
-    let array_ref = thread.thread_stack.pop_ref().ok_or(InstructionError::InternalError)?;
+fn aaload(thread: &mut Thread) -> Result<()> {
+    let index = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
+    let array_ref = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
 
     if array_ref.is_null() {
-        return Err(InstructionError::NullPointerException);
+        return Err(InstructionError::NullPointerException.into());
     }
 
     // get the array referenced
+    let lock = REFERENCE_TABLE.lock().map(|r| r).map_err(|_| InstructionError::InternalError)?;
+    let array = lock.get_reference(&array_ref).ok_or(InstructionError::InternalError)?;
+
+    // ensure this is an array
+    if !array.is_array() {
+        return Err(InstructionError::InternalError.into());
+    }
 
     // ensure array index is within bounds else throw ArrayIndexOutOfBoundsException
+    let array = array.as_array().map(|a| a).ok_or(InstructionError::InternalError)?;
+    if index < 0 || index >= array.len() as i32 {
+        return Err(InstructionError::ArrayIndexOutOfBoundsException.into());
+    }
 
-    todo!("Implement aaload instruction");
+    // get the value
+    let value = array.get(index as usize).ok_or(InstructionError::InternalError)?;
 
-    // push the value at the index onto the stack
+    // ensure the value is a reference else throw InstructionsError::InternalError
+    if value.downcast_ref::<Reference>().is_none() {
+        return Err(InstructionError::InternalError.into());
+    }
+
+    let ref_value = value.downcast_ref::<Reference>().ok_or(InstructionError::InternalError)?;
+
+    // push the value onto the stack
+    thread.thread_stack.push::<Reference>(ref_value.clone());
+
+    Ok(())
 }
 
-fn aastore(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value = thread.thread_stack.pop_ref().ok_or(InstructionError::InternalError)?;
-    let index = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
-    let array_ref = thread.thread_stack.pop_ref().ok_or(InstructionError::InternalError)?;
+fn aastore(thread: &mut Thread) -> Result<()> {
+    let value = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
+    let index = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
+    let array_ref = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
 
     if array_ref.is_null() {
-        return Err(InstructionError::NullPointerException);
+        return Err(InstructionError::NullPointerException.into());
     }
 
     // get the array referenced
@@ -301,14 +326,14 @@ fn aastore(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement aastore instruction");
 }
 
-fn aconst_null(thread: &mut Thread) -> Result<(), InstructionError> {
+fn aconst_null(thread: &mut Thread) -> Result<()> {
 
-    thread.thread_stack.push_ref(NULL_REF.get_ref_index());
+    thread.thread_stack.push(Reference::new(NULL_REF.get_ref_index()));
 
     Ok(())
 }
 
-fn aload(thread: &mut Thread) -> Result<(), InstructionError> {
+fn aload(thread: &mut Thread) -> Result<()> {
     let index = (match thread.wide_mode {
         true => thread.read_short_from_pc(),
         false => thread.read_byte_from_pc().map(|b| b as u16),
@@ -323,7 +348,7 @@ fn aload(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement aload instruction");
 }
 
-fn aload_0(thread: &mut Thread) -> Result<(), InstructionError> {
+fn aload_0(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 0 is a reference else throw InstructionsError::InternalError
 
     // push the reference from the local variable at index 0 onto the stack
@@ -331,7 +356,7 @@ fn aload_0(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement aload_0 instruction");
 }
 
-fn aload_1(thread: &mut Thread) -> Result<(), InstructionError> {
+fn aload_1(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 1 is a reference else throw InstructionsError::InternalError
 
     // push the reference from the local variable at index 1 onto the stack
@@ -339,7 +364,7 @@ fn aload_1(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement aload_1 instruction");
 }
 
-fn aload_2(thread: &mut Thread) -> Result<(), InstructionError> {
+fn aload_2(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 2 is a reference else throw InstructionsError::InternalError
 
     // push the reference from the local variable at index 2 onto the stack
@@ -347,7 +372,7 @@ fn aload_2(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement aload_2 instruction");
 }
 
-fn aload_3(thread: &mut Thread) -> Result<(), InstructionError> {
+fn aload_3(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 3 is a reference else throw InstructionsError::InternalError
 
     // push the reference from the local variable at index 3 onto the stack
@@ -355,7 +380,7 @@ fn aload_3(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement aload_3 instruction");
 }
 
-fn anewarray(thread: &mut Thread) -> Result<(), InstructionError> {
+fn anewarray(thread: &mut Thread) -> Result<()> {
     let index = thread.read_byte_from_pc().ok_or(InstructionError::InternalError)?;
 
     // ensure the constant pool entry at the index is a class reference else throw InstructionsError::InternalError
@@ -371,18 +396,18 @@ fn anewarray(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement anewarray instruction");
 }
 
-fn areturn(thread: &mut Thread) -> Result<(), InstructionError> {
+fn areturn(thread: &mut Thread) -> Result<()> {
 
     todo!("Implement areturn instruction");
 
 }
 
-fn arraylength(thread: &mut Thread) -> Result<(), InstructionError> {
+fn arraylength(thread: &mut Thread) -> Result<()> {
 
-    let array_ref = thread.thread_stack.pop_ref().ok_or(InstructionError::InternalError)?;
+    let array_ref = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
 
     if array_ref.is_null() {
-        return Err(InstructionError::NullPointerException);
+        return Err(InstructionError::NullPointerException.into());
     }
 
     // get the array referenced
@@ -393,7 +418,7 @@ fn arraylength(thread: &mut Thread) -> Result<(), InstructionError> {
 
 }
 
-fn astore(thread: &mut Thread) -> Result<(), InstructionError> {
+fn astore(thread: &mut Thread) -> Result<()> {
     let index = (match thread.wide_mode {
         true => thread.read_short_from_pc(),
         false => thread.read_byte_from_pc().map(|b| b as u16),
@@ -408,35 +433,35 @@ fn astore(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement astore instruction");
 }
 
-fn astore_0(thread: &mut Thread) -> Result<(), InstructionError> {
+fn astore_0(thread: &mut Thread) -> Result<()> {
     // pop the reference from the stack and store it in the local variable at index 0
 
     todo!("Implement astore_0 instruction");
 }
 
-fn astore_1(thread: &mut Thread) -> Result<(), InstructionError> {
+fn astore_1(thread: &mut Thread) -> Result<()> {
     // pop the reference from the stack and store it in the local variable at index 1
 
     todo!("Implement astore_1 instruction");
 }
 
-fn astore_2(thread: &mut Thread) -> Result<(), InstructionError> {
+fn astore_2(thread: &mut Thread) -> Result<()> {
     // pop the reference from the stack and store it in the local variable at index 2
 
     todo!("Implement astore_2 instruction");
 }
 
-fn astore_3(thread: &mut Thread) -> Result<(), InstructionError> {
+fn astore_3(thread: &mut Thread) -> Result<()> {
     // pop the reference from the stack and store it in the local variable at index 3
 
     todo!("Implement astore_3 instruction");
 }
 
-fn athrow(thread: &mut Thread) -> Result<(), InstructionError> {
-    let exception_ref = thread.thread_stack.pop_ref().ok_or(InstructionError::InternalError)?;
+fn athrow(thread: &mut Thread) -> Result<()> {
+    let exception_ref = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
 
     if exception_ref.is_null() {
-        return Err(InstructionError::NullPointerException);
+        return Err(InstructionError::NullPointerException.into());
     }
 
     // get the exception object referenced
@@ -446,12 +471,12 @@ fn athrow(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement athrow instruction");
 }
 
-fn baload(thread: &mut Thread) -> Result<(), InstructionError> {
-    let index = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
-    let array_ref = thread.thread_stack.pop_ref().ok_or(InstructionError::InternalError)?;
+fn baload(thread: &mut Thread) -> Result<()> {
+    let index = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
+    let array_ref = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
 
     if array_ref.is_null() {
-        return Err(InstructionError::NullPointerException);
+        return Err(InstructionError::NullPointerException.into());
     }
 
     // get the array referenced
@@ -463,13 +488,13 @@ fn baload(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement baload instruction");
 }
 
-fn bastore(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
-    let index = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
-    let array_ref = thread.thread_stack.pop_ref().ok_or(InstructionError::InternalError)?;
+fn bastore(thread: &mut Thread) -> Result<()> {
+    let value = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
+    let index = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
+    let array_ref = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
 
     if array_ref.is_null() {
-        return Err(InstructionError::NullPointerException);
+        return Err(InstructionError::NullPointerException.into());
     }
 
     // get the array referenced
@@ -481,20 +506,20 @@ fn bastore(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement bastore instruction");
 }
 
-fn bipush(thread: &mut Thread) -> Result<(), InstructionError> {
+fn bipush(thread: &mut Thread) -> Result<()> {
     let value = thread.read_byte_from_pc().ok_or(InstructionError::InternalError)? as i8;
 
-    thread.thread_stack.push_int(value as i32);
+    thread.thread_stack.push::<i32>(value as i32);
 
     Ok(())
 }
 
-fn caload(thread: &mut Thread) -> Result<(), InstructionError> {
-    let index = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
-    let array_ref = thread.thread_stack.pop_ref().ok_or(InstructionError::InternalError)?;
+fn caload(thread: &mut Thread) -> Result<()> {
+    let index = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
+    let array_ref = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
 
     if array_ref.is_null() {
-        return Err(InstructionError::NullPointerException);
+        return Err(InstructionError::NullPointerException.into());
     }
 
     // get the array referenced
@@ -506,13 +531,13 @@ fn caload(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement caload instruction");
 }
 
-fn castore(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
-    let index = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
-    let array_ref = thread.thread_stack.pop_ref().ok_or(InstructionError::InternalError)?;
+fn castore(thread: &mut Thread) -> Result<()> {
+    let value = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
+    let index = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
+    let array_ref = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
 
     if array_ref.is_null() {
-        return Err(InstructionError::NullPointerException);
+        return Err(InstructionError::NullPointerException.into());
     }
 
     // get the array referenced
@@ -524,7 +549,7 @@ fn castore(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement castore instruction");
 }
 
-fn checkcast(thread: &mut Thread) -> Result<(), InstructionError> {
+fn checkcast(thread: &mut Thread) -> Result<()> {
     let index = thread.read_short_from_pc().ok_or(InstructionError::InternalError)?;
 
     // ensure the constant pool entry at the index is a class reference else throw InstructionsError::InternalError
@@ -536,8 +561,8 @@ fn checkcast(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement checkcast instruction");
 }
 
-fn d2f(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value = thread.thread_stack.pop_double().ok_or(InstructionError::InternalError)?;
+fn d2f(thread: &mut Thread) -> Result<()> {
+    let value = thread.thread_stack.pop::<f64>().ok_or(InstructionError::InternalError)?;
 
     // convert the double value to a float value
 
@@ -546,8 +571,8 @@ fn d2f(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement d2f instruction");
 }
 
-fn d2i(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value = thread.thread_stack.pop_double().ok_or(InstructionError::InternalError)?;
+fn d2i(thread: &mut Thread) -> Result<()> {
+    let value = thread.thread_stack.pop::<f64>().ok_or(InstructionError::InternalError)?;
 
     // convert the double value to an int value
 
@@ -556,8 +581,8 @@ fn d2i(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement d2i instruction");
 }
 
-fn d2l(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value = thread.thread_stack.pop_double().ok_or(InstructionError::InternalError)?;
+fn d2l(thread: &mut Thread) -> Result<()> {
+    let value = thread.thread_stack.pop::<f64>().ok_or(InstructionError::InternalError)?;
 
     // convert the double value to a long value
 
@@ -566,9 +591,9 @@ fn d2l(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement d2l instruction");
 }
 
-fn dadd(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value2 = thread.thread_stack.pop_double().ok_or(InstructionError::InternalError)?;
-    let value1 = thread.thread_stack.pop_double().ok_or(InstructionError::InternalError)?;
+fn dadd(thread: &mut Thread) -> Result<()> {
+    let value2 = thread.thread_stack.pop::<f64>().ok_or(InstructionError::InternalError)?;
+    let value1 = thread.thread_stack.pop::<f64>().ok_or(InstructionError::InternalError)?;
 
     // add the two double values
 
@@ -577,12 +602,12 @@ fn dadd(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement dadd instruction");
 }
 
-fn daload(thread: &mut Thread) -> Result<(), InstructionError> {
-    let index = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
-    let array_ref = thread.thread_stack.pop_ref().ok_or(InstructionError::InternalError)?;
+fn daload(thread: &mut Thread) -> Result<()> {
+    let index = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
+    let array_ref = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
 
     if array_ref.is_null() {
-        return Err(InstructionError::NullPointerException);
+        return Err(InstructionError::NullPointerException.into());
     }
 
     // get the array referenced
@@ -594,13 +619,13 @@ fn daload(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement daload instruction");
 }
 
-fn dastore(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value = thread.thread_stack.pop_double().ok_or(InstructionError::InternalError)?;
-    let index = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
-    let array_ref = thread.thread_stack.pop_ref().ok_or(InstructionError::InternalError)?;
+fn dastore(thread: &mut Thread) -> Result<()> {
+    let value = thread.thread_stack.pop::<f64>().ok_or(InstructionError::InternalError)?;
+    let index = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
+    let array_ref = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
 
     if array_ref.is_null() {
-        return Err(InstructionError::NullPointerException);
+        return Err(InstructionError::NullPointerException.into());
     }
 
     // get the array referenced
@@ -612,9 +637,9 @@ fn dastore(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement dastore instruction");
 }
 
-fn dcmpg(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value2 = thread.thread_stack.pop_double().ok_or(InstructionError::InternalError)?;
-    let value1 = thread.thread_stack.pop_double().ok_or(InstructionError::InternalError)?;
+fn dcmpg(thread: &mut Thread) -> Result<()> {
+    let value2 = thread.thread_stack.pop::<f64>().ok_or(InstructionError::InternalError)?;
+    let value1 = thread.thread_stack.pop::<f64>().ok_or(InstructionError::InternalError)?;
 
     // compare the two double values
 
@@ -623,9 +648,9 @@ fn dcmpg(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement dcmpg instruction");
 }
 
-fn dcmpl(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value2 = thread.thread_stack.pop_double().ok_or(InstructionError::InternalError)?;
-    let value1 = thread.thread_stack.pop_double().ok_or(InstructionError::InternalError)?;
+fn dcmpl(thread: &mut Thread) -> Result<()> {
+    let value2 = thread.thread_stack.pop::<f64>().ok_or(InstructionError::InternalError)?;
+    let value1 = thread.thread_stack.pop::<f64>().ok_or(InstructionError::InternalError)?;
 
     // compare the two double values
 
@@ -634,21 +659,21 @@ fn dcmpl(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement dcmpl instruction");
 }
 
-fn dconst_0(thread: &mut Thread) -> Result<(), InstructionError> {
-    thread.thread_stack.push_double(0.0);
+fn dconst_0(thread: &mut Thread) -> Result<()> {
+    thread.thread_stack.push::<f64>(0.0);
 
     Ok(())
 }
 
-fn dconst_1(thread: &mut Thread) -> Result<(), InstructionError> {
-    thread.thread_stack.push_double(1.0);
+fn dconst_1(thread: &mut Thread) -> Result<()> {
+    thread.thread_stack.push::<f64>(1.0);
 
     Ok(())
 }
 
-fn ddiv(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value2 = thread.thread_stack.pop_double().ok_or(InstructionError::InternalError)?;
-    let value1 = thread.thread_stack.pop_double().ok_or(InstructionError::InternalError)?;
+fn ddiv(thread: &mut Thread) -> Result<()> {
+    let value2 = thread.thread_stack.pop::<f64>().ok_or(InstructionError::InternalError)?;
+    let value1 = thread.thread_stack.pop::<f64>().ok_or(InstructionError::InternalError)?;
 
     // divide the two double values
 
@@ -657,7 +682,7 @@ fn ddiv(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement ddiv instruction");
 }
 
-fn dload(thread: &mut Thread) -> Result<(), InstructionError> {
+fn dload(thread: &mut Thread) -> Result<()> {
     let index = (match thread.wide_mode {
         true => thread.read_short_from_pc(),
         false => thread.read_byte_from_pc().map(|b| b as u16),
@@ -672,7 +697,7 @@ fn dload(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement dload instruction");
 }
 
-fn dload_0(thread: &mut Thread) -> Result<(), InstructionError> {
+fn dload_0(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 0 is a double else throw InstructionsError::InternalError
 
     // push the double value from the local variable at index 0 onto the stack
@@ -680,7 +705,7 @@ fn dload_0(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement dload_0 instruction");
 }
 
-fn dload_1(thread: &mut Thread) -> Result<(), InstructionError> {
+fn dload_1(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 1 is a double else throw InstructionsError::InternalError
 
     // push the double value from the local variable at index 1 onto the stack
@@ -688,7 +713,7 @@ fn dload_1(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement dload_1 instruction");
 }
 
-fn dload_2(thread: &mut Thread) -> Result<(), InstructionError> {
+fn dload_2(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 2 is a double else throw InstructionsError::InternalError
 
     // push the double value from the local variable at index 2 onto the stack
@@ -696,7 +721,7 @@ fn dload_2(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement dload_2 instruction");
 }
 
-fn dload_3(thread: &mut Thread) -> Result<(), InstructionError> {
+fn dload_3(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 3 is a double else throw InstructionsError::InternalError
 
     // push the double value from the local variable at index 3 onto the stack
@@ -704,9 +729,9 @@ fn dload_3(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement dload_3 instruction");
 }
 
-fn dmul(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value2 = thread.thread_stack.pop_double().ok_or(InstructionError::InternalError)?;
-    let value1 = thread.thread_stack.pop_double().ok_or(InstructionError::InternalError)?;
+fn dmul(thread: &mut Thread) -> Result<()> {
+    let value2 = thread.thread_stack.pop::<f64>().ok_or(InstructionError::InternalError)?;
+    let value1 = thread.thread_stack.pop::<f64>().ok_or(InstructionError::InternalError)?;
 
     // multiply the two double values
 
@@ -715,8 +740,8 @@ fn dmul(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement dmul instruction");
 }
 
-fn dneg(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value = thread.thread_stack.pop_double().ok_or(InstructionError::InternalError)?;
+fn dneg(thread: &mut Thread) -> Result<()> {
+    let value = thread.thread_stack.pop::<f64>().ok_or(InstructionError::InternalError)?;
 
     // negate the double value
 
@@ -725,9 +750,9 @@ fn dneg(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement dneg instruction");
 }
 
-fn drem(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value2 = thread.thread_stack.pop_double().ok_or(InstructionError::InternalError)?;
-    let value1 = thread.thread_stack.pop_double().ok_or(InstructionError::InternalError)?;
+fn drem(thread: &mut Thread) -> Result<()> {
+    let value2 = thread.thread_stack.pop::<f64>().ok_or(InstructionError::InternalError)?;
+    let value1 = thread.thread_stack.pop::<f64>().ok_or(InstructionError::InternalError)?;
 
     // compute the remainder of the division of the two double values
 
@@ -736,13 +761,13 @@ fn drem(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement drem instruction");
 }
 
-fn dreturn(thread: &mut Thread) -> Result<(), InstructionError> {
+fn dreturn(thread: &mut Thread) -> Result<()> {
 
     todo!("Implement dreturn instruction");
 
 }
 
-fn dstore(thread: &mut Thread) -> Result<(), InstructionError> {
+fn dstore(thread: &mut Thread) -> Result<()> {
     let index = (match thread.wide_mode {
         true => thread.read_short_from_pc(),
         false => thread.read_byte_from_pc().map(|b| b as u16),
@@ -757,7 +782,7 @@ fn dstore(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement dstore instruction");
 }
 
-fn dstore_0(thread: &mut Thread) -> Result<(), InstructionError> {
+fn dstore_0(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 0 is a double else throw InstructionsError::InternalError
 
     // pop the double value from the stack and store it in the local variable at index 0
@@ -765,7 +790,7 @@ fn dstore_0(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement dstore_0 instruction");
 }
 
-fn dstore_1(thread: &mut Thread) -> Result<(), InstructionError> {
+fn dstore_1(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 1 is a double else throw InstructionsError::InternalError
 
     // pop the double value from the stack and store it in the local variable at index 1
@@ -773,7 +798,7 @@ fn dstore_1(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement dstore_1 instruction");
 }
 
-fn dstore_2(thread: &mut Thread) -> Result<(), InstructionError> {
+fn dstore_2(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 2 is a double else throw InstructionsError::InternalError
 
     // pop the double value from the stack and store it in the local variable at index 2
@@ -781,7 +806,7 @@ fn dstore_2(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement dstore_2 instruction");
 }
 
-fn dstore_3(thread: &mut Thread) -> Result<(), InstructionError> {
+fn dstore_3(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 3 is a double else throw InstructionsError::InternalError
 
     // pop the double value from the stack and store it in the local variable at index 3
@@ -789,9 +814,9 @@ fn dstore_3(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement dstore_3 instruction");
 }
 
-fn dsub(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value2 = thread.thread_stack.pop_double().ok_or(InstructionError::InternalError)?;
-    let value1 = thread.thread_stack.pop_double().ok_or(InstructionError::InternalError)?;
+fn dsub(thread: &mut Thread) -> Result<()> {
+    let value2 = thread.thread_stack.pop::<f64>().ok_or(InstructionError::InternalError)?;
+    let value1 = thread.thread_stack.pop::<f64>().ok_or(InstructionError::InternalError)?;
 
     // subtract the two double values
 
@@ -800,65 +825,65 @@ fn dsub(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement dsub instruction");
 }
 
-fn dup(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value = thread.thread_stack.pop_ref().ok_or(InstructionError::InternalError)?;
+fn dup(thread: &mut Thread) -> Result<()> {
+    let value = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
 
     // push the value back onto the stack twice
 
     todo!("Implement dup instruction");
 }
 
-fn dup_x1(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value1 = thread.thread_stack.pop_ref().ok_or(InstructionError::InternalError)?;
-    let value2 = thread.thread_stack.pop_ref().ok_or(InstructionError::InternalError)?;
+fn dup_x1(thread: &mut Thread) -> Result<()> {
+    let value1 = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
+    let value2 = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
 
     // push value1 back onto the stack, then push value2, then push value1 again
 
     todo!("Implement dup_x1 instruction");
 }
 
-fn dup_x2(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value1 = thread.thread_stack.pop_ref().ok_or(InstructionError::InternalError)?;
-    let value2 = thread.thread_stack.pop_ref().ok_or(InstructionError::InternalError)?;
-    let value3 = thread.thread_stack.pop_ref().ok_or(InstructionError::InternalError)?;
+fn dup_x2(thread: &mut Thread) -> Result<()> {
+    let value1 = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
+    let value2 = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
+    let value3 = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
 
     // push value1 back onto the stack, then push value3, then push value2, then push value1 again
 
     todo!("Implement dup_x2 instruction");
 }
 
-fn dup2(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value1 = thread.thread_stack.pop_ref().ok_or(InstructionError::InternalError)?;
-    let value2 = thread.thread_stack.pop_ref().ok_or(InstructionError::InternalError)?;
+fn dup2(thread: &mut Thread) -> Result<()> {
+    let value1 = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
+    let value2 = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
 
     // push value2 back onto the stack, then push value1, then push value2 again, then push value1 again
 
     todo!("Implement dup2 instruction");
 }
 
-fn dup2_x1(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value1 = thread.thread_stack.pop_ref().ok_or(InstructionError::InternalError)?;
-    let value2 = thread.thread_stack.pop_ref().ok_or(InstructionError::InternalError)?;
-    let value3 = thread.thread_stack.pop_ref().ok_or(InstructionError::InternalError)?;
+fn dup2_x1(thread: &mut Thread) -> Result<()> {
+    let value1 = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
+    let value2 = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
+    let value3 = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
 
     // push value2 back onto the stack, then push value1, then push value3, then push value2 again, then push value1 again
 
     todo!("Implement dup2_x1 instruction");
 }
 
-fn dup2_x2(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value1 = thread.thread_stack.pop_ref().ok_or(InstructionError::InternalError)?;
-    let value2 = thread.thread_stack.pop_ref().ok_or(InstructionError::InternalError)?;
-    let value3 = thread.thread_stack.pop_ref().ok_or(InstructionError::InternalError)?;
-    let value4 = thread.thread_stack.pop_ref().ok_or(InstructionError::InternalError)?;
+fn dup2_x2(thread: &mut Thread) -> Result<()> {
+    let value1 = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
+    let value2 = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
+    let value3 = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
+    let value4 = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
 
     // push value2 back onto the stack, then push value1, then push value4, then push value3, then push value2 again, then push value1 again
 
     todo!("Implement dup2_x2 instruction");
 }
 
-fn f2d(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value = thread.thread_stack.pop_float().ok_or(InstructionError::InternalError)?;
+fn f2d(thread: &mut Thread) -> Result<()> {
+    let value = thread.thread_stack.pop::<f32>().ok_or(InstructionError::InternalError)?;
 
     // convert the float value to a double value
 
@@ -867,8 +892,8 @@ fn f2d(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement f2d instruction");
 }
 
-fn f2i(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value = thread.thread_stack.pop_float().ok_or(InstructionError::InternalError)?;
+fn f2i(thread: &mut Thread) -> Result<()> {
+    let value = thread.thread_stack.pop::<f32>().ok_or(InstructionError::InternalError)?;
 
     // convert the float value to an int value
 
@@ -877,8 +902,8 @@ fn f2i(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement f2i instruction");
 }
 
-fn f2l(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value = thread.thread_stack.pop_float().ok_or(InstructionError::InternalError)?;
+fn f2l(thread: &mut Thread) -> Result<()> {
+    let value = thread.thread_stack.pop::<f32>().ok_or(InstructionError::InternalError)?;
 
     // convert the float value to a long value
 
@@ -887,9 +912,9 @@ fn f2l(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement f2l instruction");
 }
 
-fn fadd(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value2 = thread.thread_stack.pop_float().ok_or(InstructionError::InternalError)?;
-    let value1 = thread.thread_stack.pop_float().ok_or(InstructionError::InternalError)?;
+fn fadd(thread: &mut Thread) -> Result<()> {
+    let value2 = thread.thread_stack.pop::<f32>().ok_or(InstructionError::InternalError)?;
+    let value1 = thread.thread_stack.pop::<f32>().ok_or(InstructionError::InternalError)?;
 
     // add the two float values
 
@@ -898,12 +923,12 @@ fn fadd(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement fadd instruction");
 }
 
-fn faload(thread: &mut Thread) -> Result<(), InstructionError> {
-    let index = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
-    let array_ref = thread.thread_stack.pop_ref().ok_or(InstructionError::InternalError)?;
+fn faload(thread: &mut Thread) -> Result<()> {
+    let index = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
+    let array_ref = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
 
     if array_ref.is_null() {
-        return Err(InstructionError::NullPointerException);
+        return Err(InstructionError::NullPointerException.into());
     }
 
     // get the array referenced
@@ -915,13 +940,13 @@ fn faload(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement faload instruction");
 }
 
-fn fastore(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value = thread.thread_stack.pop_float().ok_or(InstructionError::InternalError)?;
-    let index = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
-    let array_ref = thread.thread_stack.pop_ref().ok_or(InstructionError::InternalError)?;
+fn fastore(thread: &mut Thread) -> Result<()> {
+    let value = thread.thread_stack.pop::<f32>().ok_or(InstructionError::InternalError)?;
+    let index = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
+    let array_ref = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
 
     if array_ref.is_null() {
-        return Err(InstructionError::NullPointerException);
+        return Err(InstructionError::NullPointerException.into());
     }
 
     // get the array referenced
@@ -933,9 +958,9 @@ fn fastore(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement fastore instruction");
 }
 
-fn fcmpg(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value2 = thread.thread_stack.pop_float().ok_or(InstructionError::InternalError)?;
-    let value1 = thread.thread_stack.pop_float().ok_or(InstructionError::InternalError)?;
+fn fcmpg(thread: &mut Thread) -> Result<()> {
+    let value2 = thread.thread_stack.pop::<f32>().ok_or(InstructionError::InternalError)?;
+    let value1 = thread.thread_stack.pop::<f32>().ok_or(InstructionError::InternalError)?;
 
     // compare the two float values
 
@@ -944,9 +969,9 @@ fn fcmpg(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement fcmpg instruction");
 }
 
-fn fcmpl(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value2 = thread.thread_stack.pop_float().ok_or(InstructionError::InternalError)?;
-    let value1 = thread.thread_stack.pop_float().ok_or(InstructionError::InternalError)?;
+fn fcmpl(thread: &mut Thread) -> Result<()> {
+    let value2 = thread.thread_stack.pop::<f32>().ok_or(InstructionError::InternalError)?;
+    let value1 = thread.thread_stack.pop::<f32>().ok_or(InstructionError::InternalError)?;
 
     // compare the two float values
 
@@ -955,27 +980,27 @@ fn fcmpl(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement fcmpl instruction");
 }
 
-fn fconst_0(thread: &mut Thread) -> Result<(), InstructionError> {
-    thread.thread_stack.push_float(0.0);
+fn fconst_0(thread: &mut Thread) -> Result<()> {
+    thread.thread_stack.push::<f32>(0.0);
 
     Ok(())
 }
 
-fn fconst_1(thread: &mut Thread) -> Result<(), InstructionError> {
-    thread.thread_stack.push_float(1.0);
+fn fconst_1(thread: &mut Thread) -> Result<()> {
+    thread.thread_stack.push::<f32>(1.0);
 
     Ok(())
 }
 
-fn fconst_2(thread: &mut Thread) -> Result<(), InstructionError> {
-    thread.thread_stack.push_float(2.0);
+fn fconst_2(thread: &mut Thread) -> Result<()> {
+    thread.thread_stack.push::<f32>(2.0);
 
     Ok(())
 }
 
-fn fdiv(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value2 = thread.thread_stack.pop_float().ok_or(InstructionError::InternalError)?;
-    let value1 = thread.thread_stack.pop_float().ok_or(InstructionError::InternalError)?;
+fn fdiv(thread: &mut Thread) -> Result<()> {
+    let value2 = thread.thread_stack.pop::<f32>().ok_or(InstructionError::InternalError)?;
+    let value1 = thread.thread_stack.pop::<f32>().ok_or(InstructionError::InternalError)?;
 
     // divide the two float values
 
@@ -984,7 +1009,7 @@ fn fdiv(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement fdiv instruction");
 }
 
-fn fload(thread: &mut Thread) -> Result<(), InstructionError> {
+fn fload(thread: &mut Thread) -> Result<()> {
     let index = (match thread.wide_mode {
         true => thread.read_short_from_pc(),
         false => thread.read_byte_from_pc().map(|b| b as u16),
@@ -999,7 +1024,7 @@ fn fload(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement fload instruction");
 }
 
-fn fload_0(thread: &mut Thread) -> Result<(), InstructionError> {
+fn fload_0(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 0 is a float else throw InstructionsError::InternalError
 
     // push the float value from the local variable at index 0 onto the stack
@@ -1007,7 +1032,7 @@ fn fload_0(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement fload_0 instruction");
 }
 
-fn fload_1(thread: &mut Thread) -> Result<(), InstructionError> {
+fn fload_1(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 1 is a float else throw InstructionsError::InternalError
 
     // push the float value from the local variable at index 1 onto the stack
@@ -1015,7 +1040,7 @@ fn fload_1(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement fload_1 instruction");
 }
 
-fn fload_2(thread: &mut Thread) -> Result<(), InstructionError> {
+fn fload_2(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 2 is a float else throw InstructionsError::InternalError
 
     // push the float value from the local variable at index 2 onto the stack
@@ -1023,7 +1048,7 @@ fn fload_2(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement fload_2 instruction");
 }
 
-fn fload_3(thread: &mut Thread) -> Result<(), InstructionError> {
+fn fload_3(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 3 is a float else throw InstructionsError::InternalError
 
     // push the float value from the local variable at index 3 onto the stack
@@ -1031,9 +1056,9 @@ fn fload_3(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement fload_3 instruction");
 }
 
-fn fmul(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value2 = thread.thread_stack.pop_float().ok_or(InstructionError::InternalError)?;
-    let value1 = thread.thread_stack.pop_float().ok_or(InstructionError::InternalError)?;
+fn fmul(thread: &mut Thread) -> Result<()> {
+    let value2 = thread.thread_stack.pop::<f32>().ok_or(InstructionError::InternalError)?;
+    let value1 = thread.thread_stack.pop::<f32>().ok_or(InstructionError::InternalError)?;
 
     // multiply the two float values
 
@@ -1042,8 +1067,8 @@ fn fmul(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement fmul instruction");
 }
 
-fn fneg(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value = thread.thread_stack.pop_float().ok_or(InstructionError::InternalError)?;
+fn fneg(thread: &mut Thread) -> Result<()> {
+    let value = thread.thread_stack.pop::<f32>().ok_or(InstructionError::InternalError)?;
 
     // negate the float value
 
@@ -1052,9 +1077,9 @@ fn fneg(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement fneg instruction");
 }
 
-fn frem(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value2 = thread.thread_stack.pop_float().ok_or(InstructionError::InternalError)?;
-    let value1 = thread.thread_stack.pop_float().ok_or(InstructionError::InternalError)?;
+fn frem(thread: &mut Thread) -> Result<()> {
+    let value2 = thread.thread_stack.pop::<f32>().ok_or(InstructionError::InternalError)?;
+    let value1 = thread.thread_stack.pop::<f32>().ok_or(InstructionError::InternalError)?;
 
     // compute the remainder of the division of the two float values
 
@@ -1063,13 +1088,13 @@ fn frem(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement frem instruction");
 }
 
-fn freturn(thread: &mut Thread) -> Result<(), InstructionError> {
+fn freturn(thread: &mut Thread) -> Result<()> {
 
     todo!("Implement freturn instruction");
 
 }
 
-fn fstore(thread: &mut Thread) -> Result<(), InstructionError> {
+fn fstore(thread: &mut Thread) -> Result<()> {
     let index = (match thread.wide_mode {
         true => thread.read_short_from_pc(),
         false => thread.read_byte_from_pc().map(|b| b as u16),
@@ -1084,7 +1109,7 @@ fn fstore(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement fstore instruction");
 }
 
-fn fstore_0(thread: &mut Thread) -> Result<(), InstructionError> {
+fn fstore_0(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 0 is a float else throw InstructionsError::InternalError
 
     // pop the float value from the stack and store it in the local variable at index 0
@@ -1092,7 +1117,7 @@ fn fstore_0(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement fstore_0 instruction");
 }
 
-fn fstore_1(thread: &mut Thread) -> Result<(), InstructionError> {
+fn fstore_1(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 1 is a float else throw InstructionsError::InternalError
 
     // pop the float value from the stack and store it in the local variable at index 1
@@ -1100,7 +1125,7 @@ fn fstore_1(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement fstore_1 instruction");
 }
 
-fn fstore_2(thread: &mut Thread) -> Result<(), InstructionError> {
+fn fstore_2(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 2 is a float else throw InstructionsError::InternalError
 
     // pop the float value from the stack and store it in the local variable at index 2
@@ -1108,7 +1133,7 @@ fn fstore_2(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement fstore_2 instruction");
 }
 
-fn fstore_3(thread: &mut Thread) -> Result<(), InstructionError> {
+fn fstore_3(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 3 is a float else throw InstructionsError::InternalError
 
     // pop the float value from the stack and store it in the local variable at index 3
@@ -1116,9 +1141,9 @@ fn fstore_3(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement fstore_3 instruction");
 }
 
-fn fsub(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value2 = thread.thread_stack.pop_float().ok_or(InstructionError::InternalError)?;
-    let value1 = thread.thread_stack.pop_float().ok_or(InstructionError::InternalError)?;
+fn fsub(thread: &mut Thread) -> Result<()> {
+    let value2 = thread.thread_stack.pop::<f32>().ok_or(InstructionError::InternalError)?;
+    let value1 = thread.thread_stack.pop::<f32>().ok_or(InstructionError::InternalError)?;
 
     // subtract the two float values
 
@@ -1127,7 +1152,7 @@ fn fsub(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement fsub instruction");
 }
 
-fn getfield(thread: &mut Thread) -> Result<(), InstructionError> {
+fn getfield(thread: &mut Thread) -> Result<()> {
     let index = thread.read_short_from_pc().ok_or(InstructionError::InternalError)?;
 
     // ensure the constant pool entry at the index is a field reference else throw InstructionsError::InternalError
@@ -1143,7 +1168,7 @@ fn getfield(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement getfield instruction");
 }
 
-fn getstatic(thread: &mut Thread) -> Result<(), InstructionError> {
+fn getstatic(thread: &mut Thread) -> Result<()> {
     let index = thread.read_short_from_pc().ok_or(InstructionError::InternalError)?;
 
     // ensure the constant pool entry at the index is a field reference else throw InstructionsError::InternalError
@@ -1157,7 +1182,7 @@ fn getstatic(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement getstatic instruction");
 }
 
-fn goto(thread: &mut Thread) -> Result<(), InstructionError> {
+fn goto(thread: &mut Thread) -> Result<()> {
     let offset = thread.read_short_from_pc().ok_or(InstructionError::InternalError)? as i16;
 
     // jump to the instruction at the offset from the current instruction
@@ -1165,7 +1190,7 @@ fn goto(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement goto instruction");
 }
 
-fn goto_w(thread: &mut Thread) -> Result<(), InstructionError> {
+fn goto_w(thread: &mut Thread) -> Result<()> {
     let offset = thread.read_int_from_pc().ok_or(InstructionError::InternalError)? as i32;
 
     // jump to the instruction at the offset from the current instruction
@@ -1173,8 +1198,8 @@ fn goto_w(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement goto_w instruction");
 }
 
-fn i2b(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
+fn i2b(thread: &mut Thread) -> Result<()> {
+    let value = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // convert the int value to a byte value
 
@@ -1183,8 +1208,8 @@ fn i2b(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement i2b instruction");
 }
 
-fn i2c(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
+fn i2c(thread: &mut Thread) -> Result<()> {
+    let value = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // convert the int value to a char value
 
@@ -1193,8 +1218,8 @@ fn i2c(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement i2c instruction");
 }
 
-fn i2d(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
+fn i2d(thread: &mut Thread) -> Result<()> {
+    let value = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // convert the int value to a double value
 
@@ -1203,8 +1228,8 @@ fn i2d(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement i2d instruction");
 }
 
-fn i2f(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
+fn i2f(thread: &mut Thread) -> Result<()> {
+    let value = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // convert the int value to a float value
 
@@ -1213,8 +1238,8 @@ fn i2f(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement i2f instruction");
 }
 
-fn i2l(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
+fn i2l(thread: &mut Thread) -> Result<()> {
+    let value = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // convert the int value to a long value
 
@@ -1223,8 +1248,8 @@ fn i2l(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement i2l instruction");
 }
 
-fn i2s(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
+fn i2s(thread: &mut Thread) -> Result<()> {
+    let value = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // convert the int value to a short value
 
@@ -1233,9 +1258,9 @@ fn i2s(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement i2s instruction");
 }
 
-fn iadd(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value2 = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
-    let value1 = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
+fn iadd(thread: &mut Thread) -> Result<()> {
+    let value2 = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
+    let value1 = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // add the two int values
 
@@ -1244,12 +1269,12 @@ fn iadd(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement iadd instruction");
 }
 
-fn iaload(thread: &mut Thread) -> Result<(), InstructionError> {
-    let index = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
-    let array_ref = thread.thread_stack.pop_ref().ok_or(InstructionError::InternalError)?;
+fn iaload(thread: &mut Thread) -> Result<()> {
+    let index = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
+    let array_ref = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
 
     if array_ref.is_null() {
-        return Err(InstructionError::NullPointerException);
+        return Err(InstructionError::NullPointerException.into());
     }
 
     // get the array referenced
@@ -1261,9 +1286,9 @@ fn iaload(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement iaload instruction");
 }
 
-fn iand(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value2 = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
-    let value1 = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
+fn iand(thread: &mut Thread) -> Result<()> {
+    let value2 = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
+    let value1 = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // perform a bitwise AND operation on the two int values
 
@@ -1272,13 +1297,13 @@ fn iand(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement iand instruction");
 }
 
-fn iastore(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
-    let index = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
-    let array_ref = thread.thread_stack.pop_ref().ok_or(InstructionError::InternalError)?;
+fn iastore(thread: &mut Thread) -> Result<()> {
+    let value = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
+    let index = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
+    let array_ref = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
 
     if array_ref.is_null() {
-        return Err(InstructionError::NullPointerException);
+        return Err(InstructionError::NullPointerException.into());
     }
 
     // get the array referenced
@@ -1290,54 +1315,54 @@ fn iastore(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement iastore instruction");
 }
 
-fn iconst_m1(thread: &mut Thread) -> Result<(), InstructionError> {
-    thread.thread_stack.push_int(-1);
+fn iconst_m1(thread: &mut Thread) -> Result<()> {
+    thread.thread_stack.push::<i32>(-1);
 
     Ok(())
 }
 
-fn iconst_0(thread: &mut Thread) -> Result<(), InstructionError> {
-    thread.thread_stack.push_int(0);
+fn iconst_0(thread: &mut Thread) -> Result<()> {
+    thread.thread_stack.push::<i32>(0);
 
     Ok(())
 }
 
-fn iconst_1(thread: &mut Thread) -> Result<(), InstructionError> {
-    thread.thread_stack.push_int(1);
+fn iconst_1(thread: &mut Thread) -> Result<()> {
+    thread.thread_stack.push::<i32>(1);
 
     Ok(())
 }
 
-fn iconst_2(thread: &mut Thread) -> Result<(), InstructionError> {
-    thread.thread_stack.push_int(2);
+fn iconst_2(thread: &mut Thread) -> Result<()> {
+    thread.thread_stack.push::<i32>(2);
 
     Ok(())
 }
 
-fn iconst_3(thread: &mut Thread) -> Result<(), InstructionError> {
-    thread.thread_stack.push_int(3);
+fn iconst_3(thread: &mut Thread) -> Result<()> {
+    thread.thread_stack.push::<i32>(3);
 
     Ok(())
 }
 
-fn iconst_4(thread: &mut Thread) -> Result<(), InstructionError> {
-    thread.thread_stack.push_int(4);
+fn iconst_4(thread: &mut Thread) -> Result<()> {
+    thread.thread_stack.push::<i32>(4);
 
     Ok(())
 }
 
-fn iconst_5(thread: &mut Thread) -> Result<(), InstructionError> {
-    thread.thread_stack.push_int(5);
+fn iconst_5(thread: &mut Thread) -> Result<()> {
+    thread.thread_stack.push::<i32>(5);
 
     Ok(())
 }
 
-fn idiv(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value2 = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
-    let value1 = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
+fn idiv(thread: &mut Thread) -> Result<()> {
+    let value2 = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
+    let value1 = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     if value2 == 0 {
-        return Err(InstructionError::ArithmeticException);
+        return Err(InstructionError::ArithmeticException.into());
     }
 
     // divide the two int values
@@ -1347,159 +1372,159 @@ fn idiv(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement idiv instruction");
 }
 
-fn if_acmpeq(thread: &mut Thread) -> Result<(), InstructionError> {
+fn if_acmpeq(thread: &mut Thread) -> Result<()> {
     let offset = thread.read_short_from_pc().ok_or(InstructionError::InternalError)? as i16;
-    let value2 = thread.thread_stack.pop_ref().ok_or(InstructionError::InternalError)?;
-    let value1 = thread.thread_stack.pop_ref().ok_or(InstructionError::InternalError)?;
+    let value2 = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
+    let value1 = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
 
     // if the two object references are equal, jump to the instruction at the offset from the current instruction
 
     todo!("Implement if_acmpeq instruction");
 }
 
-fn if_acmpne(thread: &mut Thread) -> Result<(), InstructionError> {
+fn if_acmpne(thread: &mut Thread) -> Result<()> {
     let offset = thread.read_short_from_pc().ok_or(InstructionError::InternalError)? as i16;
-    let value2 = thread.thread_stack.pop_ref().ok_or(InstructionError::InternalError)?;
-    let value1 = thread.thread_stack.pop_ref().ok_or(InstructionError::InternalError)?;
+    let value2 = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
+    let value1 = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
 
     // if the two object references are not equal, jump to the instruction at the offset from the current instruction
 
     todo!("Implement if_acmpne instruction");
 }
 
-fn if_icmpeq(thread: &mut Thread) -> Result<(), InstructionError> {
+fn if_icmpeq(thread: &mut Thread) -> Result<()> {
     let offset = thread.read_short_from_pc().ok_or(InstructionError::InternalError)? as i16;
-    let value2 = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
-    let value1 = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
+    let value2 = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
+    let value1 = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // if the two int values are equal, jump to the instruction at the offset from the current instruction
 
     todo!("Implement if_icmpeq instruction");
 }
 
-fn if_icmpne(thread: &mut Thread) -> Result<(), InstructionError> {
+fn if_icmpne(thread: &mut Thread) -> Result<()> {
     let offset = thread.read_short_from_pc().ok_or(InstructionError::InternalError)? as i16;
-    let value2 = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
-    let value1 = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
+    let value2 = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
+    let value1 = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // if the two int values are not equal, jump to the instruction at the offset from the current instruction
 
     todo!("Implement if_icmpne instruction");
 }
 
-fn if_icmplt(thread: &mut Thread) -> Result<(), InstructionError> {
+fn if_icmplt(thread: &mut Thread) -> Result<()> {
     let offset = thread.read_short_from_pc().ok_or(InstructionError::InternalError)? as i16;
-    let value2 = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
-    let value1 = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
+    let value2 = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
+    let value1 = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // if value1 is less than value2, jump to the instruction at the offset from the current instruction
 
     todo!("Implement if_icmplt instruction");
 }
 
-fn if_icmpge(thread: &mut Thread) -> Result<(), InstructionError> {
+fn if_icmpge(thread: &mut Thread) -> Result<()> {
     let offset = thread.read_short_from_pc().ok_or(InstructionError::InternalError)? as i16;
-    let value2 = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
-    let value1 = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
+    let value2 = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
+    let value1 = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // if value1 is greater than or equal to value2, jump to the instruction at the offset from the current instruction
 
     todo!("Implement if_icmpge instruction");
 }
 
-fn if_icmpgt(thread: &mut Thread) -> Result<(), InstructionError> {
+fn if_icmpgt(thread: &mut Thread) -> Result<()> {
     let offset = thread.read_short_from_pc().ok_or(InstructionError::InternalError)? as i16;
-    let value2 = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
-    let value1 = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
+    let value2 = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
+    let value1 = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // if value1 is greater than value2, jump to the instruction at the offset from the current instruction
 
     todo!("Implement if_icmpgt instruction");
 }
 
-fn if_icmple(thread: &mut Thread) -> Result<(), InstructionError> {
+fn if_icmple(thread: &mut Thread) -> Result<()> {
     let offset = thread.read_short_from_pc().ok_or(InstructionError::InternalError)? as i16;
-    let value2 = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
-    let value1 = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
+    let value2 = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
+    let value1 = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // if value1 is less than or equal to value2, jump to the instruction at the offset from the current instruction
 
     todo!("Implement if_icmple instruction");
 }
 
-fn ifeq(thread: &mut Thread) -> Result<(), InstructionError> {
+fn ifeq(thread: &mut Thread) -> Result<()> {
     let offset = thread.read_short_from_pc().ok_or(InstructionError::InternalError)? as i16;
-    let value = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
+    let value = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // if the int value is equal to 0, jump to the instruction at the offset from the current instruction
 
     todo!("Implement ifeq instruction");
 }
 
-fn ifne(thread: &mut Thread) -> Result<(), InstructionError> {
+fn ifne(thread: &mut Thread) -> Result<()> {
     let offset = thread.read_short_from_pc().ok_or(InstructionError::InternalError)? as i16;
-    let value = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
+    let value = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // if the int value is not equal to 0, jump to the instruction at the offset from the current instruction
 
     todo!("Implement ifne instruction");
 }
 
-fn iflt(thread: &mut Thread) -> Result<(), InstructionError> {
+fn iflt(thread: &mut Thread) -> Result<()> {
     let offset = thread.read_short_from_pc().ok_or(InstructionError::InternalError)? as i16;
-    let value = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
+    let value = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // if the int value is less than 0, jump to the instruction at the offset from the current instruction
 
     todo!("Implement iflt instruction");
 }
 
-fn ifge(thread: &mut Thread) -> Result<(), InstructionError> {
+fn ifge(thread: &mut Thread) -> Result<()> {
     let offset = thread.read_short_from_pc().ok_or(InstructionError::InternalError)? as i16;
-    let value = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
+    let value = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // if the int value is greater than or equal to 0, jump to the instruction at the offset from the current instruction
 
     todo!("Implement ifge instruction");
 }
 
-fn ifgt(thread: &mut Thread) -> Result<(), InstructionError> {
+fn ifgt(thread: &mut Thread) -> Result<()> {
     let offset = thread.read_short_from_pc().ok_or(InstructionError::InternalError)? as i16;
-    let value = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
+    let value = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // if the int value is greater than 0, jump to the instruction at the offset from the current instruction
 
     todo!("Implement ifgt instruction");
 }
 
-fn ifle(thread: &mut Thread) -> Result<(), InstructionError> {
+fn ifle(thread: &mut Thread) -> Result<()> {
     let offset = thread.read_short_from_pc().ok_or(InstructionError::InternalError)? as i16;
-    let value = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
+    let value = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // if the int value is less than or equal to 0, jump to the instruction at the offset from the current instruction
 
     todo!("Implement ifle instruction");
 }
 
-fn ifnonnull(thread: &mut Thread) -> Result<(), InstructionError> {
+fn ifnonnull(thread: &mut Thread) -> Result<()> {
     let offset = thread.read_short_from_pc().ok_or(InstructionError::InternalError)? as i16;
-    let value = thread.thread_stack.pop_ref().ok_or(InstructionError::InternalError)?;
+    let value = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
 
     // if the object reference is not null, jump to the instruction at the offset from the current instruction
 
     todo!("Implement ifnonnull instruction");
 }
 
-fn ifnull(thread: &mut Thread) -> Result<(), InstructionError> {
+fn ifnull(thread: &mut Thread) -> Result<()> {
     let offset = thread.read_short_from_pc().ok_or(InstructionError::InternalError)? as i16;
-    let value = thread.thread_stack.pop_ref().ok_or(InstructionError::InternalError)?;
+    let value = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
 
     // if the object reference is null, jump to the instruction at the offset from the current instruction
 
     todo!("Implement ifnull instruction");
 }
 
-fn iinc(thread: &mut Thread) -> Result<(), InstructionError> {
+fn iinc(thread: &mut Thread) -> Result<()> {
     let index = thread.read_byte_from_pc().ok_or(InstructionError::InternalError)? as u16;
     let constant = thread.read_byte_from_pc().ok_or(InstructionError::InternalError)? as i8;
 
@@ -1512,7 +1537,7 @@ fn iinc(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement iinc instruction");
 }
 
-fn iload(thread: &mut Thread) -> Result<(), InstructionError> {
+fn iload(thread: &mut Thread) -> Result<()> {
     let index = (match thread.wide_mode {
         true => thread.read_short_from_pc(),
         false => thread.read_byte_from_pc().map(|b| b as u16),
@@ -1527,7 +1552,7 @@ fn iload(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement iload instruction");
 }
 
-fn iload_0(thread: &mut Thread) -> Result<(), InstructionError> {
+fn iload_0(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 0 is an int else throw InstructionsError::InternalError
 
     // push the int value from the local variable at index 0 onto the stack
@@ -1535,7 +1560,7 @@ fn iload_0(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement iload_0 instruction");
 }
 
-fn iload_1(thread: &mut Thread) -> Result<(), InstructionError> {
+fn iload_1(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 1 is an int else throw InstructionsError::InternalError
 
     // push the int value from the local variable at index 1 onto the stack
@@ -1543,7 +1568,7 @@ fn iload_1(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement iload_1 instruction");
 }
 
-fn iload_2(thread: &mut Thread) -> Result<(), InstructionError> {
+fn iload_2(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 2 is an int else throw InstructionsError::InternalError
 
     // push the int value from the local variable at index 2 onto the stack
@@ -1551,7 +1576,7 @@ fn iload_2(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement iload_2 instruction");
 }
 
-fn iload_3(thread: &mut Thread) -> Result<(), InstructionError> {
+fn iload_3(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 3 is an int else throw InstructionsError::InternalError
 
     // push the int value from the local variable at index 3 onto the stack
@@ -1559,9 +1584,9 @@ fn iload_3(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement iload_3 instruction");
 }
 
-fn imul(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value2 = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
-    let value1 = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
+fn imul(thread: &mut Thread) -> Result<()> {
+    let value2 = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
+    let value1 = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // multiply the two int values
 
@@ -1570,8 +1595,8 @@ fn imul(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement imul instruction");
 }
 
-fn ineg(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
+fn ineg(thread: &mut Thread) -> Result<()> {
+    let value = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // negate the int value
 
@@ -1580,7 +1605,7 @@ fn ineg(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement ineg instruction");
 }
 
-fn instanceof(thread: &mut Thread) -> Result<(), InstructionError> {
+fn instanceof(thread: &mut Thread) -> Result<()> {
     let index = thread.read_short_from_pc().ok_or(InstructionError::InternalError)?;
 
     // ensure the constant pool entry at the index is a class reference else throw InstructionsError::InternalError
@@ -1596,7 +1621,7 @@ fn instanceof(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement instanceof instruction");
 }
 
-fn invokedynamic(thread: &mut Thread) -> Result<(), InstructionError> {
+fn invokedynamic(thread: &mut Thread) -> Result<()> {
     let index = thread.read_short_from_pc().ok_or(InstructionError::InternalError)?;
 
     // ensure the constant pool entry at the index is a method reference else throw InstructionsError::InternalError
@@ -1608,7 +1633,7 @@ fn invokedynamic(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement invokedynamic instruction");
 }
 
-fn invokeinterface(thread: &mut Thread) -> Result<(), InstructionError> {
+fn invokeinterface(thread: &mut Thread) -> Result<()> {
     let index = thread.read_short_from_pc().ok_or(InstructionError::InternalError)?;
     let count = thread.read_byte_from_pc().ok_or(InstructionError::InternalError)?;
 
@@ -1623,7 +1648,7 @@ fn invokeinterface(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement invokeinterface instruction");
 }
 
-fn invokespecial(thread: &mut Thread) -> Result<(), InstructionError> {
+fn invokespecial(thread: &mut Thread) -> Result<()> {
     let index = thread.read_short_from_pc().ok_or(InstructionError::InternalError)?;
 
     // ensure the constant pool entry at the index is a method reference else throw InstructionsError::InternalError
@@ -1637,7 +1662,7 @@ fn invokespecial(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement invokespecial instruction");
 }
 
-fn invokestatic(thread: &mut Thread) -> Result<(), InstructionError> {
+fn invokestatic(thread: &mut Thread) -> Result<()> {
     let index = thread.read_short_from_pc().ok_or(InstructionError::InternalError)?;
 
     // ensure the constant pool entry at the index is a method reference else throw InstructionsError::InternalError
@@ -1649,7 +1674,7 @@ fn invokestatic(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement invokestatic instruction");
 }
 
-fn invokevirtual(thread: &mut Thread) -> Result<(), InstructionError> {
+fn invokevirtual(thread: &mut Thread) -> Result<()> {
     let index = thread.read_short_from_pc().ok_or(InstructionError::InternalError)?;
 
     // ensure the constant pool entry at the index is a method reference else throw InstructionsError::InternalError
@@ -1663,9 +1688,9 @@ fn invokevirtual(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement invokevirtual instruction");
 }
 
-fn ior(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value2 = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
-    let value1 = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
+fn ior(thread: &mut Thread) -> Result<()> {
+    let value2 = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
+    let value1 = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // perform a bitwise OR operation on the two int values
 
@@ -1674,12 +1699,12 @@ fn ior(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement ior instruction");
 }
 
-fn irem(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value2 = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
-    let value1 = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
+fn irem(thread: &mut Thread) -> Result<()> {
+    let value2 = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
+    let value1 = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     if value2 == 0 {
-        return Err(InstructionError::ArithmeticException);
+        return Err(InstructionError::ArithmeticException.into());
     }
 
     // compute the remainder of the division of the two int values
@@ -1689,15 +1714,15 @@ fn irem(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement irem instruction");
 }
 
-fn ireturn(thread: &mut Thread) -> Result<(), InstructionError> {
+fn ireturn(thread: &mut Thread) -> Result<()> {
 
     todo!("Implement ireturn instruction");
 
 }
 
-fn ishl(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value2 = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
-    let value1 = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
+fn ishl(thread: &mut Thread) -> Result<()> {
+    let value2 = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
+    let value1 = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // shift the first int value to the left by the number of bits specified by the second int value
 
@@ -1706,9 +1731,9 @@ fn ishl(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement ishl instruction");
 }
 
-fn ishr(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value2 = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
-    let value1 = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
+fn ishr(thread: &mut Thread) -> Result<()> {
+    let value2 = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
+    let value1 = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // shift the first int value to the right by the number of bits specified by the second int value, using sign extension
 
@@ -1717,7 +1742,7 @@ fn ishr(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement ishr instruction");
 }
 
-fn istore(thread: &mut Thread) -> Result<(), InstructionError> {
+fn istore(thread: &mut Thread) -> Result<()> {
     let index = (match thread.wide_mode {
         true => thread.read_short_from_pc(),
         false => thread.read_byte_from_pc().map(|b| b as u16),
@@ -1732,7 +1757,7 @@ fn istore(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement istore instruction");
 }
 
-fn istore_0(thread: &mut Thread) -> Result<(), InstructionError> {
+fn istore_0(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 0 is an int else throw InstructionsError::InternalError
 
     // pop the int value from the stack and store it in the local variable at index 0
@@ -1740,7 +1765,7 @@ fn istore_0(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement istore_0 instruction");
 }
 
-fn istore_1(thread: &mut Thread) -> Result<(), InstructionError> {
+fn istore_1(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 1 is an int else throw InstructionsError::InternalError
 
     // pop the int value from the stack and store it in the local variable at index 1
@@ -1748,7 +1773,7 @@ fn istore_1(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement istore_1 instruction");
 }
 
-fn istore_2(thread: &mut Thread) -> Result<(), InstructionError> {
+fn istore_2(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 2 is an int else throw InstructionsError::InternalError
 
     // pop the int value from the stack and store it in the local variable at index 2
@@ -1756,7 +1781,7 @@ fn istore_2(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement istore_2 instruction");
 }
 
-fn istore_3(thread: &mut Thread) -> Result<(), InstructionError> {
+fn istore_3(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 3 is an int else throw InstructionsError::InternalError
 
     // pop the int value from the stack and store it in the local variable at index 3
@@ -1764,9 +1789,9 @@ fn istore_3(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement istore_3 instruction");
 }
 
-fn isub(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value2 = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
-    let value1 = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
+fn isub(thread: &mut Thread) -> Result<()> {
+    let value2 = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
+    let value1 = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // subtract the two int values
 
@@ -1775,9 +1800,9 @@ fn isub(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement isub instruction");
 }
 
-fn iushr(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value2 = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
-    let value1 = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
+fn iushr(thread: &mut Thread) -> Result<()> {
+    let value2 = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
+    let value1 = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // shift the first int value to the right by the number of bits specified by the second int value, using zero extension
 
@@ -1786,9 +1811,9 @@ fn iushr(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement iushr instruction");
 }
 
-fn ixor(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value2 = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
-    let value1 = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
+fn ixor(thread: &mut Thread) -> Result<()> {
+    let value2 = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
+    let value1 = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // perform a bitwise XOR operation on the two int values
 
@@ -1797,7 +1822,7 @@ fn ixor(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement ixor instruction");
 }
 
-fn jsr(thread: &mut Thread) -> Result<(), InstructionError> {
+fn jsr(thread: &mut Thread) -> Result<()> {
     let offset = thread.read_short_from_pc().ok_or(InstructionError::InternalError)? as i16;
 
     // push the address of the next instruction onto the stack
@@ -1807,7 +1832,7 @@ fn jsr(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement jsr instruction");
 }
 
-fn jsr_w(thread: &mut Thread) -> Result<(), InstructionError> {
+fn jsr_w(thread: &mut Thread) -> Result<()> {
     let offset = thread.read_int_from_pc().ok_or(InstructionError::InternalError)? as i32;
 
     // push the address of the next instruction onto the stack
@@ -1817,8 +1842,8 @@ fn jsr_w(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement jsr_w instruction");
 }
 
-fn l2d(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value = thread.thread_stack.pop_long().ok_or(InstructionError::InternalError)?;
+fn l2d(thread: &mut Thread) -> Result<()> {
+    let value = thread.thread_stack.pop::<i64>().ok_or(InstructionError::InternalError)?;
 
     // convert the long value to a double value
 
@@ -1827,8 +1852,8 @@ fn l2d(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement l2d instruction");
 }
 
-fn l2f(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value = thread.thread_stack.pop_long().ok_or(InstructionError::InternalError)?;
+fn l2f(thread: &mut Thread) -> Result<()> {
+    let value = thread.thread_stack.pop::<i64>().ok_or(InstructionError::InternalError)?;
 
     // convert the long value to a float value
 
@@ -1837,8 +1862,8 @@ fn l2f(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement l2f instruction");
 }
 
-fn l2i(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value = thread.thread_stack.pop_long().ok_or(InstructionError::InternalError)?;
+fn l2i(thread: &mut Thread) -> Result<()> {
+    let value = thread.thread_stack.pop::<i64>().ok_or(InstructionError::InternalError)?;
 
     // convert the long value to an int value
 
@@ -1847,9 +1872,9 @@ fn l2i(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement l2i instruction");
 }
 
-fn ladd(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value2 = thread.thread_stack.pop_long().ok_or(InstructionError::InternalError)?;
-    let value1 = thread.thread_stack.pop_long().ok_or(InstructionError::InternalError)?;
+fn ladd(thread: &mut Thread) -> Result<()> {
+    let value2 = thread.thread_stack.pop::<i64>().ok_or(InstructionError::InternalError)?;
+    let value1 = thread.thread_stack.pop::<i64>().ok_or(InstructionError::InternalError)?;
 
     // add the two long values
 
@@ -1858,12 +1883,12 @@ fn ladd(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement ladd instruction");
 }
 
-fn laload(thread: &mut Thread) -> Result<(), InstructionError> {
-    let index = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
-    let array_ref = thread.thread_stack.pop_ref().ok_or(InstructionError::InternalError)?;
+fn laload(thread: &mut Thread) -> Result<()> {
+    let index = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
+    let array_ref = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
 
     if array_ref.is_null() {
-        return Err(InstructionError::NullPointerException);
+        return Err(InstructionError::NullPointerException.into());
     }
 
     // get the array referenced
@@ -1875,9 +1900,9 @@ fn laload(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement laload instruction");
 }
 
-fn land(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value2 = thread.thread_stack.pop_long().ok_or(InstructionError::InternalError)?;
-    let value1 = thread.thread_stack.pop_long().ok_or(InstructionError::InternalError)?;
+fn land(thread: &mut Thread) -> Result<()> {
+    let value2 = thread.thread_stack.pop::<i64>().ok_or(InstructionError::InternalError)?;
+    let value1 = thread.thread_stack.pop::<i64>().ok_or(InstructionError::InternalError)?;
 
     // perform a bitwise AND operation on the two long values
 
@@ -1886,13 +1911,13 @@ fn land(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement land instruction");
 }
 
-fn lastore(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value = thread.thread_stack.pop_long().ok_or(InstructionError::InternalError)?;
-    let index = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
-    let array_ref = thread.thread_stack.pop_ref().ok_or(InstructionError::InternalError)?;
+fn lastore(thread: &mut Thread) -> Result<()> {
+    let value = thread.thread_stack.pop::<i64>().ok_or(InstructionError::InternalError)?;
+    let index = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
+    let array_ref = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
 
     if array_ref.is_null() {
-        return Err(InstructionError::NullPointerException);
+        return Err(InstructionError::NullPointerException.into());
     }
 
     // get the array referenced
@@ -1904,9 +1929,9 @@ fn lastore(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement lastore instruction");
 }
 
-fn lcmp(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value2 = thread.thread_stack.pop_long().ok_or(InstructionError::InternalError)?;
-    let value1 = thread.thread_stack.pop_long().ok_or(InstructionError::InternalError)?;
+fn lcmp(thread: &mut Thread) -> Result<()> {
+    let value2 = thread.thread_stack.pop::<i64>().ok_or(InstructionError::InternalError)?;
+    let value1 = thread.thread_stack.pop::<i64>().ok_or(InstructionError::InternalError)?;
 
     // compare the two long values
 
@@ -1915,19 +1940,19 @@ fn lcmp(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement lcmp instruction");
 }
 
-fn lconst_0(thread: &mut Thread) -> Result<(), InstructionError> {
-    thread.thread_stack.push_long(0);
+fn lconst_0(thread: &mut Thread) -> Result<()> {
+    thread.thread_stack.push::<i64>(0);
 
     Ok(())
 }
 
-fn lconst_1(thread: &mut Thread) -> Result<(), InstructionError> {
-    thread.thread_stack.push_long(1);
+fn lconst_1(thread: &mut Thread) -> Result<()> {
+    thread.thread_stack.push::<i64>(1);
 
     Ok(())
 }
 
-fn ldc(thread: &mut Thread) -> Result<(), InstructionError> {
+fn ldc(thread: &mut Thread) -> Result<()> {
     let index = thread.read_byte_from_pc().ok_or(InstructionError::InternalError)? as u16;
 
     // ensure the constant pool entry at the index is a class reference, field reference, method reference, string reference, or integer constant else throw InstructionsError::InternalError
@@ -1939,7 +1964,7 @@ fn ldc(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement ldc instruction");
 }
 
-fn ldc_w(thread: &mut Thread) -> Result<(), InstructionError> {
+fn ldc_w(thread: &mut Thread) -> Result<()> {
     let index = thread.read_short_from_pc().ok_or(InstructionError::InternalError)?;
 
     // ensure the constant pool entry at the index is a class reference, field reference, method reference, string reference, or integer constant else throw InstructionsError::InternalError
@@ -1951,7 +1976,7 @@ fn ldc_w(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement ldc_w instruction");
 }
 
-fn ldc2_w(thread: &mut Thread) -> Result<(), InstructionError> {
+fn ldc2_w(thread: &mut Thread) -> Result<()> {
     let index = thread.read_short_from_pc().ok_or(InstructionError::InternalError)?;
 
     // ensure the constant pool entry at the index is a long constant or double constant else throw InstructionsError::InternalError
@@ -1963,12 +1988,12 @@ fn ldc2_w(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement ldc2_w instruction");
 }
 
-fn ldiv(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value2 = thread.thread_stack.pop_long().ok_or(InstructionError::InternalError)?;
-    let value1 = thread.thread_stack.pop_long().ok_or(InstructionError::InternalError)?;
+fn ldiv(thread: &mut Thread) -> Result<()> {
+    let value2 = thread.thread_stack.pop::<i64>().ok_or(InstructionError::InternalError)?;
+    let value1 = thread.thread_stack.pop::<i64>().ok_or(InstructionError::InternalError)?;
 
     if value2 == 0 {
-        return Err(InstructionError::ArithmeticException);
+        return Err(InstructionError::ArithmeticException.into());
     }
 
     // divide the two long values
@@ -1978,7 +2003,7 @@ fn ldiv(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement ldiv instruction");
 }
 
-fn lload(thread: &mut Thread) -> Result<(), InstructionError> {
+fn lload(thread: &mut Thread) -> Result<()> {
     let index = (match thread.wide_mode {
         true => thread.read_short_from_pc(),
         false => thread.read_byte_from_pc().map(|b| b as u16),
@@ -1993,7 +2018,7 @@ fn lload(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement lload instruction");
 }
 
-fn lload_0(thread: &mut Thread) -> Result<(), InstructionError> {
+fn lload_0(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 0 is a long else throw InstructionsError::InternalError
 
     // push the long value from the local variable at index 0 onto the stack
@@ -2001,7 +2026,7 @@ fn lload_0(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement lload_0 instruction");
 }
 
-fn lload_1(thread: &mut Thread) -> Result<(), InstructionError> {
+fn lload_1(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 1 is a long else throw InstructionsError::InternalError
 
     // push the long value from the local variable at index 1 onto the stack
@@ -2009,7 +2034,7 @@ fn lload_1(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement lload_1 instruction");
 }
 
-fn lload_2(thread: &mut Thread) -> Result<(), InstructionError> {
+fn lload_2(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 2 is a long else throw InstructionsError::InternalError
 
     // push the long value from the local variable at index 2 onto the stack
@@ -2017,7 +2042,7 @@ fn lload_2(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement lload_2 instruction");
 }
 
-fn lload_3(thread: &mut Thread) -> Result<(), InstructionError> {
+fn lload_3(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 3 is a long else throw InstructionsError::InternalError
 
     // push the long value from the local variable at index 3 onto the stack
@@ -2025,9 +2050,9 @@ fn lload_3(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement lload_3 instruction");
 }
 
-fn lmul(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value2 = thread.thread_stack.pop_long().ok_or(InstructionError::InternalError)?;
-    let value1 = thread.thread_stack.pop_long().ok_or(InstructionError::InternalError)?;
+fn lmul(thread: &mut Thread) -> Result<()> {
+    let value2 = thread.thread_stack.pop::<i64>().ok_or(InstructionError::InternalError)?;
+    let value1 = thread.thread_stack.pop::<i64>().ok_or(InstructionError::InternalError)?;
 
     // multiply the two long values
 
@@ -2036,8 +2061,8 @@ fn lmul(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement lmul instruction");
 }
 
-fn lneg(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value = thread.thread_stack.pop_long().ok_or(InstructionError::InternalError)?;
+fn lneg(thread: &mut Thread) -> Result<()> {
+    let value = thread.thread_stack.pop::<i64>().ok_or(InstructionError::InternalError)?;
 
     // negate the long value
 
@@ -2046,7 +2071,7 @@ fn lneg(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement lneg instruction");
 }
 
-fn lookupswitch(thread: &mut Thread) -> Result<(), InstructionError> {
+fn lookupswitch(thread: &mut Thread) -> Result<()> {
     // skip padding bytes
 
     let default_offset = thread.read_int_from_pc().ok_or(InstructionError::InternalError)?;
@@ -2063,9 +2088,9 @@ fn lookupswitch(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement lookupswitch instruction");
 }
 
-fn lor(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value2 = thread.thread_stack.pop_long().ok_or(InstructionError::InternalError)?;
-    let value1 = thread.thread_stack.pop_long().ok_or(InstructionError::InternalError)?;
+fn lor(thread: &mut Thread) -> Result<()> {
+    let value2 = thread.thread_stack.pop::<i64>().ok_or(InstructionError::InternalError)?;
+    let value1 = thread.thread_stack.pop::<i64>().ok_or(InstructionError::InternalError)?;
 
     // perform a bitwise OR operation on the two long values
 
@@ -2074,12 +2099,12 @@ fn lor(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement lor instruction");
 }
 
-fn lrem(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value2 = thread.thread_stack.pop_long().ok_or(InstructionError::InternalError)?;
-    let value1 = thread.thread_stack.pop_long().ok_or(InstructionError::InternalError)?;
+fn lrem(thread: &mut Thread) -> Result<()> {
+    let value2 = thread.thread_stack.pop::<i64>().ok_or(InstructionError::InternalError)?;
+    let value1 = thread.thread_stack.pop::<i64>().ok_or(InstructionError::InternalError)?;
 
     if value2 == 0 {
-        return Err(InstructionError::ArithmeticException);
+        return Err(InstructionError::ArithmeticException.into());
     }
 
     // compute the remainder of the division of the two long values
@@ -2089,15 +2114,15 @@ fn lrem(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement lrem instruction");
 }
 
-fn lreturn(thread: &mut Thread) -> Result<(), InstructionError> {
+fn lreturn(thread: &mut Thread) -> Result<()> {
 
     todo!("Implement lreturn instruction");
 
 }
 
-fn lshl(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value2 = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
-    let value1 = thread.thread_stack.pop_long().ok_or(InstructionError::InternalError)?;
+fn lshl(thread: &mut Thread) -> Result<()> {
+    let value2 = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
+    let value1 = thread.thread_stack.pop::<i64>().ok_or(InstructionError::InternalError)?;
 
     // shift the long value to the left by the number of bits specified by the int value
 
@@ -2106,9 +2131,9 @@ fn lshl(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement lshl instruction");
 }
 
-fn lshr(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value2 = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
-    let value1 = thread.thread_stack.pop_long().ok_or(InstructionError::InternalError)?;
+fn lshr(thread: &mut Thread) -> Result<()> {
+    let value2 = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
+    let value1 = thread.thread_stack.pop::<i64>().ok_or(InstructionError::InternalError)?;
 
     // shift the long value to the right by the number of bits specified by the int value, using sign extension
 
@@ -2117,7 +2142,7 @@ fn lshr(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement lshr instruction");
 }
 
-fn lstore(thread: &mut Thread) -> Result<(), InstructionError> {
+fn lstore(thread: &mut Thread) -> Result<()> {
     let index = (match thread.wide_mode {
         true => thread.read_short_from_pc(),
         false => thread.read_byte_from_pc().map(|b| b as u16),
@@ -2132,7 +2157,7 @@ fn lstore(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement lstore instruction");
 }
 
-fn lstore_0(thread: &mut Thread) -> Result<(), InstructionError> {
+fn lstore_0(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 0 is a long else throw InstructionsError::InternalError
 
     // pop the long value from the stack and store it in the local variable at index 0
@@ -2140,7 +2165,7 @@ fn lstore_0(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement lstore_0 instruction");
 }
 
-fn lstore_1(thread: &mut Thread) -> Result<(), InstructionError> {
+fn lstore_1(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 1 is a long else throw InstructionsError::InternalError
 
     // pop the long value from the stack and store it in the local variable at index 1
@@ -2148,7 +2173,7 @@ fn lstore_1(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement lstore_1 instruction");
 }
 
-fn lstore_2(thread: &mut Thread) -> Result<(), InstructionError> {
+fn lstore_2(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 2 is a long else throw InstructionsError::InternalError
 
     // pop the long value from the stack and store it in the local variable at index 2
@@ -2156,7 +2181,7 @@ fn lstore_2(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement lstore_2 instruction");
 }
 
-fn lstore_3(thread: &mut Thread) -> Result<(), InstructionError> {
+fn lstore_3(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 3 is a long else throw InstructionsError::InternalError
 
     // pop the long value from the stack and store it in the local variable at index 3
@@ -2164,9 +2189,9 @@ fn lstore_3(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement lstore_3 instruction");
 }
 
-fn lsub(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value2 = thread.thread_stack.pop_long().ok_or(InstructionError::InternalError)?;
-    let value1 = thread.thread_stack.pop_long().ok_or(InstructionError::InternalError)?;
+fn lsub(thread: &mut Thread) -> Result<()> {
+    let value2 = thread.thread_stack.pop::<i64>().ok_or(InstructionError::InternalError)?;
+    let value1 = thread.thread_stack.pop::<i64>().ok_or(InstructionError::InternalError)?;
 
     // subtract the two long values
 
@@ -2175,9 +2200,9 @@ fn lsub(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement lsub instruction");
 }
 
-fn lushr(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value2 = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
-    let value1 = thread.thread_stack.pop_long().ok_or(InstructionError::InternalError)?;
+fn lushr(thread: &mut Thread) -> Result<()> {
+    let value2 = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
+    let value1 = thread.thread_stack.pop::<i64>().ok_or(InstructionError::InternalError)?;
 
     // shift the long value to the right by the number of bits specified by the int value, using zero extension
 
@@ -2186,9 +2211,9 @@ fn lushr(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement lushr instruction");
 }
 
-fn lxor(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value2 = thread.thread_stack.pop_long().ok_or(InstructionError::InternalError)?;
-    let value1 = thread.thread_stack.pop_long().ok_or(InstructionError::InternalError)?;
+fn lxor(thread: &mut Thread) -> Result<()> {
+    let value2 = thread.thread_stack.pop::<i64>().ok_or(InstructionError::InternalError)?;
+    let value1 = thread.thread_stack.pop::<i64>().ok_or(InstructionError::InternalError)?;
 
     // perform a bitwise XOR operation on the two long values
 
@@ -2197,11 +2222,11 @@ fn lxor(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement lxor instruction");
 }
 
-fn monitorenter(thread: &mut Thread) -> Result<(), InstructionError> {
-    let object_ref = thread.thread_stack.pop_ref().ok_or(InstructionError::InternalError)?;
+fn monitorenter(thread: &mut Thread) -> Result<()> {
+    let object_ref = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
 
     if object_ref.is_null() {
-        return Err(InstructionError::NullPointerException);
+        return Err(InstructionError::NullPointerException.into());
     }
 
     // get the object monitor for the object reference
@@ -2211,11 +2236,11 @@ fn monitorenter(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement monitorenter instruction");
 }
 
-fn monitorexit(thread: &mut Thread) -> Result<(), InstructionError> {
-    let object_ref = thread.thread_stack.pop_ref().ok_or(InstructionError::InternalError)?;
+fn monitorexit(thread: &mut Thread) -> Result<()> {
+    let object_ref = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
 
     if object_ref.is_null() {
-        return Err(InstructionError::NullPointerException);
+        return Err(InstructionError::NullPointerException.into());
     }
 
     // get the object monitor for the object reference
@@ -2225,7 +2250,7 @@ fn monitorexit(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement monitorexit instruction");
 }
 
-fn multianewarray(thread: &mut Thread) -> Result<(), InstructionError> {
+fn multianewarray(thread: &mut Thread) -> Result<()> {
     let index = thread.read_short_from_pc().ok_or(InstructionError::InternalError)?;
     let dimensions = thread.read_byte_from_pc().ok_or(InstructionError::InternalError)?;
 
@@ -2240,7 +2265,7 @@ fn multianewarray(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement multianewarray instruction");
 }
 
-fn new(thread: &mut Thread) -> Result<(), InstructionError> {
+fn new(thread: &mut Thread) -> Result<()> {
     let index = thread.read_short_from_pc().ok_or(InstructionError::InternalError)?;
 
     // ensure the constant pool entry at the index is a class reference else throw InstructionsError::InternalError
@@ -2252,12 +2277,12 @@ fn new(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement new instruction");
 }
 
-fn newarray(thread: &mut Thread) -> Result<(), InstructionError> {
+fn newarray(thread: &mut Thread) -> Result<()> {
     let atype = thread.read_byte_from_pc().ok_or(InstructionError::InternalError)?;
-    let count = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
+    let count = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     if count < 0 {
-        return Err(InstructionError::NegativeArraySizeException);
+        return Err(InstructionError::NegativeArraySizeException.into());
     }
 
     // create a new array of the specified type and length and push a reference to it onto the stack
@@ -2265,26 +2290,26 @@ fn newarray(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement newarray instruction");
 }
 
-fn nop(thread: &mut Thread) -> Result<(), InstructionError> {
+fn nop(thread: &mut Thread) -> Result<()> {
     // do nothing
 
     Ok(())
 }
 
-fn pop(thread: &mut Thread) -> Result<(), InstructionError> {
-    thread.thread_stack.pop_short().ok_or(InstructionError::InternalError)?;
+fn pop(thread: &mut Thread) -> Result<()> {
+    thread.thread_stack.pop::<i16>().ok_or(InstructionError::InternalError)?;
 
     Ok(())
 }
 
-fn pop2(thread: &mut Thread) -> Result<(), InstructionError> {
-    thread.thread_stack.pop_short().ok_or(InstructionError::InternalError)?;
-    thread.thread_stack.pop_short().ok_or(InstructionError::InternalError)?;
+fn pop2(thread: &mut Thread) -> Result<()> {
+    thread.thread_stack.pop::<i16>().ok_or(InstructionError::InternalError)?;
+    thread.thread_stack.pop::<i16>().ok_or(InstructionError::InternalError)?;
 
     Ok(())
 }
 
-fn putfield(thread: &mut Thread) -> Result<(), InstructionError> {
+fn putfield(thread: &mut Thread) -> Result<()> {
     let index = thread.read_short_from_pc().ok_or(InstructionError::InternalError)?;
 
     // ensure the constant pool entry at the index is a field reference else throw InstructionsError::InternalError
@@ -2298,7 +2323,7 @@ fn putfield(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement putfield instruction");
 }
 
-fn putstatic(thread: &mut Thread) -> Result<(), InstructionError> {
+fn putstatic(thread: &mut Thread) -> Result<()> {
     let index = thread.read_short_from_pc().ok_or(InstructionError::InternalError)?;
 
     // ensure the constant pool entry at the index is a field reference else throw InstructionsError::InternalError
@@ -2310,7 +2335,7 @@ fn putstatic(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement putstatic instruction");
 }
 
-fn ret(thread: &mut Thread) -> Result<(), InstructionError> {
+fn ret(thread: &mut Thread) -> Result<()> {
     let index = thread.read_byte_from_pc().ok_or(InstructionError::InternalError)? as u16;
 
     // ensure index is within bounds of local variable array else throw InstructionsError::InternalError
@@ -2322,18 +2347,18 @@ fn ret(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement ret instruction");
 }
 
-fn return_(thread: &mut Thread) -> Result<(), InstructionError> {
+fn return_(thread: &mut Thread) -> Result<()> {
 
     todo!("Implement return instruction");
 
 }
 
-fn saload(thread: &mut Thread) -> Result<(), InstructionError> {
-    let index = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
-    let array_ref = thread.thread_stack.pop_ref().ok_or(InstructionError::InternalError)?;
+fn saload(thread: &mut Thread) -> Result<()> {
+    let index = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
+    let array_ref = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
 
     if array_ref.is_null() {
-        return Err(InstructionError::NullPointerException);
+        return Err(InstructionError::NullPointerException.into());
     }
 
     // get the array referenced
@@ -2345,13 +2370,13 @@ fn saload(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement saload instruction");
 }
 
-fn sastore(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
-    let index = thread.thread_stack.pop_int().ok_or(InstructionError::InternalError)?;
-    let array_ref = thread.thread_stack.pop_ref().ok_or(InstructionError::InternalError)?;
+fn sastore(thread: &mut Thread) -> Result<()> {
+    let value = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
+    let index = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
+    let array_ref = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
 
     if array_ref.is_null() {
-        return Err(InstructionError::NullPointerException);
+        return Err(InstructionError::NullPointerException.into());
     }
 
     // get the array referenced
@@ -2363,7 +2388,7 @@ fn sastore(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement sastore instruction");
 }
 
-fn sipush(thread: &mut Thread) -> Result<(), InstructionError> {
+fn sipush(thread: &mut Thread) -> Result<()> {
     let value = thread.read_short_from_pc().ok_or(InstructionError::InternalError)?;
 
     // push the short value onto the stack as an int
@@ -2371,19 +2396,19 @@ fn sipush(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement sipush instruction");
 }
 
-fn swap(thread: &mut Thread) -> Result<(), InstructionError> {
-    let value1 = thread.thread_stack.pop_short().ok_or(InstructionError::InternalError)?;
-    let value2 = thread.thread_stack.pop_short().ok_or(InstructionError::InternalError)?;
+fn swap(thread: &mut Thread) -> Result<()> {
+    let value1 = thread.thread_stack.pop::<i16>().ok_or(InstructionError::InternalError)?;
+    let value2 = thread.thread_stack.pop::<i16>().ok_or(InstructionError::InternalError)?;
 
     // push the values back onto the stack in reverse order
 
-    thread.thread_stack.push_short(value1);
-    thread.thread_stack.push_short(value2);
+    thread.thread_stack.push::<i16>(value1);
+    thread.thread_stack.push::<i16>(value2);
 
     Ok(())
 }
 
-fn tableswitch(thread: &mut Thread) -> Result<(), InstructionError> {
+fn tableswitch(thread: &mut Thread) -> Result<()> {
     // skip padding bytes
 
     let default_offset = thread.read_int_from_pc().ok_or(InstructionError::InternalError)?;
@@ -2399,7 +2424,7 @@ fn tableswitch(thread: &mut Thread) -> Result<(), InstructionError> {
     todo!("Implement tableswitch instruction");
 }
 
-fn wide(thread: &mut Thread) -> Result<(), InstructionError> {
+fn wide(thread: &mut Thread) -> Result<()> {
     thread.wide_mode = true;
 
     Ok(())
@@ -2428,7 +2453,7 @@ mod tests {
     fn test_nop_returns_ok_and_leaves_stack_empty() {
         let mut t = make_thread();
         assert!(nop(&mut t).is_ok());
-        assert!(t.thread_stack.pop_int().is_none());
+        assert!(t.thread_stack.pop::<i32>().is_none());
     }
 
     // ── 0x01  aconst_null ─────────────────────────────────────────────────────
@@ -2437,7 +2462,7 @@ mod tests {
     fn test_aconst_null_pushes_null_reference() {
         let mut t = make_thread();
         assert!(aconst_null(&mut t).is_ok());
-        let r = t.thread_stack.pop_ref().unwrap();
+        let r = t.thread_stack.pop::<Reference>().unwrap();
         assert!(r.is_null());
     }
 
@@ -2447,49 +2472,49 @@ mod tests {
     fn test_iconst_m1_pushes_negative_one() {
         let mut t = make_thread();
         assert!(iconst_m1(&mut t).is_ok());
-        assert_eq!(t.thread_stack.pop_int().unwrap(), -1);
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), -1);
     }
 
     #[test]
     fn test_iconst_0_pushes_zero() {
         let mut t = make_thread();
         assert!(iconst_0(&mut t).is_ok());
-        assert_eq!(t.thread_stack.pop_int().unwrap(), 0);
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 0);
     }
 
     #[test]
     fn test_iconst_1_pushes_one() {
         let mut t = make_thread();
         assert!(iconst_1(&mut t).is_ok());
-        assert_eq!(t.thread_stack.pop_int().unwrap(), 1);
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 1);
     }
 
     #[test]
     fn test_iconst_2_pushes_two() {
         let mut t = make_thread();
         assert!(iconst_2(&mut t).is_ok());
-        assert_eq!(t.thread_stack.pop_int().unwrap(), 2);
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 2);
     }
 
     #[test]
     fn test_iconst_3_pushes_three() {
         let mut t = make_thread();
         assert!(iconst_3(&mut t).is_ok());
-        assert_eq!(t.thread_stack.pop_int().unwrap(), 3);
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 3);
     }
 
     #[test]
     fn test_iconst_4_pushes_four() {
         let mut t = make_thread();
         assert!(iconst_4(&mut t).is_ok());
-        assert_eq!(t.thread_stack.pop_int().unwrap(), 4);
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 4);
     }
 
     #[test]
     fn test_iconst_5_pushes_five() {
         let mut t = make_thread();
         assert!(iconst_5(&mut t).is_ok());
-        assert_eq!(t.thread_stack.pop_int().unwrap(), 5);
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 5);
     }
 
     // ── 0x09–0x0a  lconst ─────────────────────────────────────────────────────
@@ -2498,14 +2523,14 @@ mod tests {
     fn test_lconst_0_pushes_zero_long() {
         let mut t = make_thread();
         assert!(lconst_0(&mut t).is_ok());
-        assert_eq!(t.thread_stack.pop_long().unwrap(), 0i64);
+        assert_eq!(t.thread_stack.pop::<i64>().unwrap(), 0i64);
     }
 
     #[test]
     fn test_lconst_1_pushes_one_long() {
         let mut t = make_thread();
         assert!(lconst_1(&mut t).is_ok());
-        assert_eq!(t.thread_stack.pop_long().unwrap(), 1i64);
+        assert_eq!(t.thread_stack.pop::<i64>().unwrap(), 1i64);
     }
 
     // ── 0x0b–0x0d  fconst ─────────────────────────────────────────────────────
@@ -2514,21 +2539,21 @@ mod tests {
     fn test_fconst_0_pushes_zero_float() {
         let mut t = make_thread();
         assert!(fconst_0(&mut t).is_ok());
-        assert_eq!(t.thread_stack.pop_float().unwrap(), 0.0f32);
+        assert_eq!(t.thread_stack.pop::<f32>().unwrap(), 0.0f32);
     }
 
     #[test]
     fn test_fconst_1_pushes_one_float() {
         let mut t = make_thread();
         assert!(fconst_1(&mut t).is_ok());
-        assert_eq!(t.thread_stack.pop_float().unwrap(), 1.0f32);
+        assert_eq!(t.thread_stack.pop::<f32>().unwrap(), 1.0f32);
     }
 
     #[test]
     fn test_fconst_2_pushes_two_float() {
         let mut t = make_thread();
         assert!(fconst_2(&mut t).is_ok());
-        assert_eq!(t.thread_stack.pop_float().unwrap(), 2.0f32);
+        assert_eq!(t.thread_stack.pop::<f32>().unwrap(), 2.0f32);
     }
 
     // ── 0x0e–0x0f  dconst ─────────────────────────────────────────────────────
@@ -2537,14 +2562,14 @@ mod tests {
     fn test_dconst_0_pushes_zero_double() {
         let mut t = make_thread();
         assert!(dconst_0(&mut t).is_ok());
-        assert_eq!(t.thread_stack.pop_double().unwrap(), 0.0f64);
+        assert_eq!(t.thread_stack.pop::<f64>().unwrap(), 0.0f64);
     }
 
     #[test]
     fn test_dconst_1_pushes_one_double() {
         let mut t = make_thread();
         assert!(dconst_1(&mut t).is_ok());
-        assert_eq!(t.thread_stack.pop_double().unwrap(), 1.0f64);
+        assert_eq!(t.thread_stack.pop::<f64>().unwrap(), 1.0f64);
     }
 
     // ── 0x10  bipush ──────────────────────────────────────────────────────────
@@ -2687,128 +2712,120 @@ mod tests {
     #[test]
     fn test_iaload_null_ref_throws() {
         let mut t = make_thread();
-        t.thread_stack.push_ref(0);
-        t.thread_stack.push_int(0);
-        assert!(matches!(iaload(&mut t), Err(InstructionError::NullPointerException)));
+        t.thread_stack.push(Reference::new(0));
+        t.thread_stack.push::<i32>(0);
+        assert!(matches!(iaload(&mut t).unwrap_err().downcast_ref::<InstructionError>(), Some(InstructionError::NullPointerException)));
     }
     #[test]
     #[should_panic]
     fn test_iaload_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_ref(1);
-        t.thread_stack.push_int(0);
+        t.thread_stack.push(Reference::new(1));
+        t.thread_stack.push::<i32>(0);
         let _ = iaload(&mut t);
     }
 
     #[test]
     fn test_laload_null_ref_throws() {
         let mut t = make_thread();
-        t.thread_stack.push_ref(0);
-        t.thread_stack.push_int(0);
-        assert!(matches!(laload(&mut t), Err(InstructionError::NullPointerException)));
+        t.thread_stack.push(Reference::new(0));
+        t.thread_stack.push::<i32>(0);
+        assert!(matches!(laload(&mut t).unwrap_err().downcast_ref::<InstructionError>(), Some(InstructionError::NullPointerException)));
     }
     #[test]
     #[should_panic]
     fn test_laload_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_ref(1);
-        t.thread_stack.push_int(0);
+        t.thread_stack.push(Reference::new(1));
+        t.thread_stack.push::<i32>(0);
         let _ = laload(&mut t);
     }
 
     #[test]
     fn test_faload_null_ref_throws() {
         let mut t = make_thread();
-        t.thread_stack.push_ref(0);
-        t.thread_stack.push_int(0);
-        assert!(matches!(faload(&mut t), Err(InstructionError::NullPointerException)));
+        t.thread_stack.push(Reference::new(0));
+        t.thread_stack.push::<i32>(0);
+        assert!(matches!(faload(&mut t).unwrap_err().downcast_ref::<InstructionError>(), Some(InstructionError::NullPointerException)));
     }
     #[test]
     #[should_panic]
     fn test_faload_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_ref(1);
-        t.thread_stack.push_int(0);
+        t.thread_stack.push(Reference::new(1));
+        t.thread_stack.push::<i32>(0);
         let _ = faload(&mut t);
     }
 
     #[test]
     fn test_daload_null_ref_throws() {
         let mut t = make_thread();
-        t.thread_stack.push_ref(0);
-        t.thread_stack.push_int(0);
-        assert!(matches!(daload(&mut t), Err(InstructionError::NullPointerException)));
+        t.thread_stack.push(Reference::new(0));
+        t.thread_stack.push::<i32>(0);
+        assert!(matches!(daload(&mut t).unwrap_err().downcast_ref::<InstructionError>(), Some(InstructionError::NullPointerException)));
     }
     #[test]
     #[should_panic]
     fn test_daload_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_ref(1);
-        t.thread_stack.push_int(0);
+        t.thread_stack.push(Reference::new(1));
+        t.thread_stack.push::<i32>(0);
         let _ = daload(&mut t);
     }
 
     #[test]
     fn test_aaload_null_ref_throws() {
         let mut t = make_thread();
-        t.thread_stack.push_ref(0);
-        t.thread_stack.push_int(0);
-        assert!(matches!(aaload(&mut t), Err(InstructionError::NullPointerException)));
-    }
-    #[test]
-    #[should_panic]
-    fn test_aaload_unimplemented() {
-        let mut t = make_thread();
-        t.thread_stack.push_ref(1);
-        t.thread_stack.push_int(0);
-        let _ = aaload(&mut t);
+        t.thread_stack.push(Reference::new(0));
+        t.thread_stack.push::<i32>(0);
+        assert!(matches!(aaload(&mut t).unwrap_err().downcast_ref::<InstructionError>(), Some(InstructionError::NullPointerException)));
     }
 
     #[test]
     fn test_baload_null_ref_throws() {
         let mut t = make_thread();
-        t.thread_stack.push_ref(0);
-        t.thread_stack.push_int(0);
-        assert!(matches!(baload(&mut t), Err(InstructionError::NullPointerException)));
+        t.thread_stack.push(Reference::new(0));
+        t.thread_stack.push::<i32>(0);
+        assert!(matches!(baload(&mut t).unwrap_err().downcast_ref::<InstructionError>(), Some(InstructionError::NullPointerException)));
     }
     #[test]
     #[should_panic]
     fn test_baload_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_ref(1);
-        t.thread_stack.push_int(0);
+        t.thread_stack.push(Reference::new(1));
+        t.thread_stack.push::<i32>(0);
         let _ = baload(&mut t);
     }
 
     #[test]
     fn test_caload_null_ref_throws() {
         let mut t = make_thread();
-        t.thread_stack.push_ref(0);
-        t.thread_stack.push_int(0);
-        assert!(matches!(caload(&mut t), Err(InstructionError::NullPointerException)));
+        t.thread_stack.push(Reference::new(0));
+        t.thread_stack.push::<i32>(0);
+        assert!(matches!(caload(&mut t).unwrap_err().downcast_ref::<InstructionError>(), Some(InstructionError::NullPointerException)));
     }
     #[test]
     #[should_panic]
     fn test_caload_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_ref(1);
-        t.thread_stack.push_int(0);
+        t.thread_stack.push(Reference::new(1));
+        t.thread_stack.push::<i32>(0);
         let _ = caload(&mut t);
     }
 
     #[test]
     fn test_saload_null_ref_throws() {
         let mut t = make_thread();
-        t.thread_stack.push_ref(0);
-        t.thread_stack.push_int(0);
-        assert!(matches!(saload(&mut t), Err(InstructionError::NullPointerException)));
+        t.thread_stack.push(Reference::new(0));
+        t.thread_stack.push::<i32>(0);
+        assert!(matches!(saload(&mut t).unwrap_err().downcast_ref::<InstructionError>(), Some(InstructionError::NullPointerException)));
     }
     #[test]
     #[should_panic]
     fn test_saload_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_ref(1);
-        t.thread_stack.push_int(0);
+        t.thread_stack.push(Reference::new(1));
+        t.thread_stack.push::<i32>(0);
         let _ = saload(&mut t);
     }
 
@@ -2902,144 +2919,144 @@ mod tests {
     #[test]
     fn test_iastore_null_ref_throws() {
         let mut t = make_thread();
-        t.thread_stack.push_ref(0);
-        t.thread_stack.push_int(0);
-        t.thread_stack.push_int(42);
-        assert!(matches!(iastore(&mut t), Err(InstructionError::NullPointerException)));
+        t.thread_stack.push(Reference::new(0));
+        t.thread_stack.push::<i32>(0);
+        t.thread_stack.push::<i32>(42);
+        assert!(matches!(iastore(&mut t).unwrap_err().downcast_ref::<InstructionError>(), Some(InstructionError::NullPointerException)));
     }
     #[test]
     #[should_panic]
     fn test_iastore_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_ref(1);
-        t.thread_stack.push_int(0);
-        t.thread_stack.push_int(42);
+        t.thread_stack.push(Reference::new(1));
+        t.thread_stack.push::<i32>(0);
+        t.thread_stack.push::<i32>(42);
         let _ = iastore(&mut t);
     }
 
     #[test]
     fn test_lastore_null_ref_throws() {
         let mut t = make_thread();
-        t.thread_stack.push_ref(0);
-        t.thread_stack.push_int(0);
-        t.thread_stack.push_long(42);
-        assert!(matches!(lastore(&mut t), Err(InstructionError::NullPointerException)));
+        t.thread_stack.push(Reference::new(0));
+        t.thread_stack.push::<i32>(0);
+        t.thread_stack.push::<i64>(42);
+        assert!(matches!(lastore(&mut t).unwrap_err().downcast_ref::<InstructionError>(), Some(InstructionError::NullPointerException)));
     }
     #[test]
     #[should_panic]
     fn test_lastore_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_ref(1);
-        t.thread_stack.push_int(0);
-        t.thread_stack.push_long(42);
+        t.thread_stack.push(Reference::new(1));
+        t.thread_stack.push::<i32>(0);
+        t.thread_stack.push::<i64>(42);
         let _ = lastore(&mut t);
     }
 
     #[test]
     fn test_fastore_null_ref_throws() {
         let mut t = make_thread();
-        t.thread_stack.push_ref(0);
-        t.thread_stack.push_int(0);
-        t.thread_stack.push_float(1.0);
-        assert!(matches!(fastore(&mut t), Err(InstructionError::NullPointerException)));
+        t.thread_stack.push(Reference::new(0));
+        t.thread_stack.push::<i32>(0);
+        t.thread_stack.push::<f32>(1.0);
+        assert!(matches!(fastore(&mut t).unwrap_err().downcast_ref::<InstructionError>(), Some(InstructionError::NullPointerException)));
     }
     #[test]
     #[should_panic]
     fn test_fastore_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_ref(1);
-        t.thread_stack.push_int(0);
-        t.thread_stack.push_float(1.0);
+        t.thread_stack.push(Reference::new(1));
+        t.thread_stack.push::<i32>(0);
+        t.thread_stack.push::<f32>(1.0);
         let _ = fastore(&mut t);
     }
 
     #[test]
     fn test_dastore_null_ref_throws() {
         let mut t = make_thread();
-        t.thread_stack.push_ref(0);
-        t.thread_stack.push_int(0);
-        t.thread_stack.push_double(1.0);
-        assert!(matches!(dastore(&mut t), Err(InstructionError::NullPointerException)));
+        t.thread_stack.push(Reference::new(0));
+        t.thread_stack.push::<i32>(0);
+        t.thread_stack.push::<f64>(1.0);
+        assert!(matches!(dastore(&mut t).unwrap_err().downcast_ref::<InstructionError>(), Some(InstructionError::NullPointerException)));
     }
     #[test]
     #[should_panic]
     fn test_dastore_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_ref(1);
-        t.thread_stack.push_int(0);
-        t.thread_stack.push_double(1.0);
+        t.thread_stack.push(Reference::new(1));
+        t.thread_stack.push::<i32>(0);
+        t.thread_stack.push::<f64>(1.0);
         let _ = dastore(&mut t);
     }
 
     #[test]
     fn test_aastore_null_ref_throws() {
         let mut t = make_thread();
-        t.thread_stack.push_ref(0);
-        t.thread_stack.push_int(0);
-        t.thread_stack.push_ref(5);
-        assert!(matches!(aastore(&mut t), Err(InstructionError::NullPointerException)));
+        t.thread_stack.push(Reference::new(0));
+        t.thread_stack.push::<i32>(0);
+        t.thread_stack.push(Reference::new(5));
+        assert!(matches!(aastore(&mut t).unwrap_err().downcast_ref::<InstructionError>(), Some(InstructionError::NullPointerException)));
     }
     #[test]
     #[should_panic]
     fn test_aastore_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_ref(1);
-        t.thread_stack.push_int(0);
-        t.thread_stack.push_ref(5);
+        t.thread_stack.push(Reference::new(1));
+        t.thread_stack.push::<i32>(0);
+        t.thread_stack.push(Reference::new(5));
         let _ = aastore(&mut t);
     }
 
     #[test]
     fn test_bastore_null_ref_throws() {
         let mut t = make_thread();
-        t.thread_stack.push_ref(0);
-        t.thread_stack.push_int(0);
-        t.thread_stack.push_int(1);
-        assert!(matches!(bastore(&mut t), Err(InstructionError::NullPointerException)));
+        t.thread_stack.push(Reference::new(0));
+        t.thread_stack.push::<i32>(0);
+        t.thread_stack.push::<i32>(1);
+        assert!(matches!(bastore(&mut t).unwrap_err().downcast_ref::<InstructionError>(), Some(InstructionError::NullPointerException)));
     }
     #[test]
     #[should_panic]
     fn test_bastore_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_ref(1);
-        t.thread_stack.push_int(0);
-        t.thread_stack.push_int(1);
+        t.thread_stack.push(Reference::new(1));
+        t.thread_stack.push::<i32>(0);
+        t.thread_stack.push::<i32>(1);
         let _ = bastore(&mut t);
     }
 
     #[test]
     fn test_castore_null_ref_throws() {
         let mut t = make_thread();
-        t.thread_stack.push_ref(0);
-        t.thread_stack.push_int(0);
-        t.thread_stack.push_int(65);
-        assert!(matches!(castore(&mut t), Err(InstructionError::NullPointerException)));
+        t.thread_stack.push(Reference::new(0));
+        t.thread_stack.push::<i32>(0);
+        t.thread_stack.push::<i32>(65);
+        assert!(matches!(castore(&mut t).unwrap_err().downcast_ref::<InstructionError>(), Some(InstructionError::NullPointerException)));
     }
     #[test]
     #[should_panic]
     fn test_castore_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_ref(1);
-        t.thread_stack.push_int(0);
-        t.thread_stack.push_int(65);
+        t.thread_stack.push(Reference::new(1));
+        t.thread_stack.push::<i32>(0);
+        t.thread_stack.push::<i32>(65);
         let _ = castore(&mut t);
     }
 
     #[test]
     fn test_sastore_null_ref_throws() {
         let mut t = make_thread();
-        t.thread_stack.push_ref(0);
-        t.thread_stack.push_int(0);
-        t.thread_stack.push_int(100);
-        assert!(matches!(sastore(&mut t), Err(InstructionError::NullPointerException)));
+        t.thread_stack.push(Reference::new(0));
+        t.thread_stack.push::<i32>(0);
+        t.thread_stack.push::<i32>(100);
+        assert!(matches!(sastore(&mut t).unwrap_err().downcast_ref::<InstructionError>(), Some(InstructionError::NullPointerException)));
     }
     #[test]
     #[should_panic]
     fn test_sastore_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_ref(1);
-        t.thread_stack.push_int(0);
-        t.thread_stack.push_int(100);
+        t.thread_stack.push(Reference::new(1));
+        t.thread_stack.push::<i32>(0);
+        t.thread_stack.push::<i32>(100);
         let _ = sastore(&mut t);
     }
 
@@ -3048,15 +3065,15 @@ mod tests {
     #[test]
     fn test_pop_removes_top_short() {
         let mut t = make_thread();
-        t.thread_stack.push_short(42);
+        t.thread_stack.push::<i16>(42);
         assert!(pop(&mut t).is_ok());
-        assert!(t.thread_stack.pop_short().is_none());
+        assert!(t.thread_stack.pop::<i16>().is_none());
     }
 
     #[test]
     fn test_pop_empty_stack_returns_internal_error() {
         let mut t = make_thread();
-        assert!(matches!(pop(&mut t), Err(InstructionError::InternalError)));
+        assert!(matches!(pop(&mut t).unwrap_err().downcast_ref::<InstructionError>(), Some(InstructionError::InternalError)));
     }
 
     // ── 0x58  pop2 ────────────────────────────────────────────────────────────
@@ -3064,16 +3081,16 @@ mod tests {
     #[test]
     fn test_pop2_removes_two_shorts() {
         let mut t = make_thread();
-        t.thread_stack.push_short(1);
-        t.thread_stack.push_short(2);
+        t.thread_stack.push::<i16>(1);
+        t.thread_stack.push::<i16>(2);
         assert!(pop2(&mut t).is_ok());
-        assert!(t.thread_stack.pop_short().is_none());
+        assert!(t.thread_stack.pop::<i16>().is_none());
     }
 
     #[test]
     fn test_pop2_empty_stack_returns_internal_error() {
         let mut t = make_thread();
-        assert!(matches!(pop2(&mut t), Err(InstructionError::InternalError)));
+        assert!(matches!(pop2(&mut t).unwrap_err().downcast_ref::<InstructionError>(), Some(InstructionError::InternalError)));
     }
 
     // ── 0x59–0x5e  dup variants ───────────────────────────────────────────────
@@ -3082,7 +3099,7 @@ mod tests {
     #[should_panic]
     fn test_dup_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_ref(1);
+        t.thread_stack.push(Reference::new(1));
         let _ = dup(&mut t);
     }
 
@@ -3090,8 +3107,8 @@ mod tests {
     #[should_panic]
     fn test_dup_x1_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_ref(1);
-        t.thread_stack.push_ref(2);
+        t.thread_stack.push(Reference::new(1));
+        t.thread_stack.push(Reference::new(2));
         let _ = dup_x1(&mut t);
     }
 
@@ -3099,9 +3116,9 @@ mod tests {
     #[should_panic]
     fn test_dup_x2_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_ref(1);
-        t.thread_stack.push_ref(2);
-        t.thread_stack.push_ref(3);
+        t.thread_stack.push(Reference::new(1));
+        t.thread_stack.push(Reference::new(2));
+        t.thread_stack.push(Reference::new(3));
         let _ = dup_x2(&mut t);
     }
 
@@ -3109,8 +3126,8 @@ mod tests {
     #[should_panic]
     fn test_dup2_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_ref(1);
-        t.thread_stack.push_ref(2);
+        t.thread_stack.push(Reference::new(1));
+        t.thread_stack.push(Reference::new(2));
         let _ = dup2(&mut t);
     }
 
@@ -3118,9 +3135,9 @@ mod tests {
     #[should_panic]
     fn test_dup2_x1_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_ref(1);
-        t.thread_stack.push_ref(2);
-        t.thread_stack.push_ref(3);
+        t.thread_stack.push(Reference::new(1));
+        t.thread_stack.push(Reference::new(2));
+        t.thread_stack.push(Reference::new(3));
         let _ = dup2_x1(&mut t);
     }
 
@@ -3128,10 +3145,10 @@ mod tests {
     #[should_panic]
     fn test_dup2_x2_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_ref(1);
-        t.thread_stack.push_ref(2);
-        t.thread_stack.push_ref(3);
-        t.thread_stack.push_ref(4);
+        t.thread_stack.push(Reference::new(1));
+        t.thread_stack.push(Reference::new(2));
+        t.thread_stack.push(Reference::new(3));
+        t.thread_stack.push(Reference::new(4));
         let _ = dup2_x2(&mut t);
     }
 
@@ -3140,17 +3157,17 @@ mod tests {
     #[test]
     fn test_swap_reverses_top_two_shorts() {
         let mut t = make_thread();
-        t.thread_stack.push_short(10);
-        t.thread_stack.push_short(20);
+        t.thread_stack.push::<i16>(10);
+        t.thread_stack.push::<i16>(20);
         assert!(swap(&mut t).is_ok());
-        assert_eq!(t.thread_stack.pop_short().unwrap(), 10);
-        assert_eq!(t.thread_stack.pop_short().unwrap(), 20);
+        assert_eq!(t.thread_stack.pop::<i16>().unwrap(), 10);
+        assert_eq!(t.thread_stack.pop::<i16>().unwrap(), 20);
     }
 
     #[test]
     fn test_swap_empty_stack_returns_internal_error() {
         let mut t = make_thread();
-        assert!(matches!(swap(&mut t), Err(InstructionError::InternalError)));
+        assert!(matches!(swap(&mut t).unwrap_err().downcast_ref::<InstructionError>(), Some(InstructionError::InternalError)));
     }
 
     // ── 0x60–0x63  add ────────────────────────────────────────────────────────
@@ -3159,8 +3176,8 @@ mod tests {
     #[should_panic]
     fn test_iadd_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_int(1);
-        t.thread_stack.push_int(2);
+        t.thread_stack.push::<i32>(1);
+        t.thread_stack.push::<i32>(2);
         let _ = iadd(&mut t);
     }
 
@@ -3168,8 +3185,8 @@ mod tests {
     #[should_panic]
     fn test_ladd_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_long(1);
-        t.thread_stack.push_long(2);
+        t.thread_stack.push::<i64>(1);
+        t.thread_stack.push::<i64>(2);
         let _ = ladd(&mut t);
     }
 
@@ -3177,8 +3194,8 @@ mod tests {
     #[should_panic]
     fn test_fadd_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_float(1.0);
-        t.thread_stack.push_float(2.0);
+        t.thread_stack.push::<f32>(1.0);
+        t.thread_stack.push::<f32>(2.0);
         let _ = fadd(&mut t);
     }
 
@@ -3186,8 +3203,8 @@ mod tests {
     #[should_panic]
     fn test_dadd_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_double(1.0);
-        t.thread_stack.push_double(2.0);
+        t.thread_stack.push::<f64>(1.0);
+        t.thread_stack.push::<f64>(2.0);
         let _ = dadd(&mut t);
     }
 
@@ -3197,8 +3214,8 @@ mod tests {
     #[should_panic]
     fn test_isub_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_int(5);
-        t.thread_stack.push_int(3);
+        t.thread_stack.push::<i32>(5);
+        t.thread_stack.push::<i32>(3);
         let _ = isub(&mut t);
     }
 
@@ -3206,8 +3223,8 @@ mod tests {
     #[should_panic]
     fn test_lsub_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_long(5);
-        t.thread_stack.push_long(3);
+        t.thread_stack.push::<i64>(5);
+        t.thread_stack.push::<i64>(3);
         let _ = lsub(&mut t);
     }
 
@@ -3215,8 +3232,8 @@ mod tests {
     #[should_panic]
     fn test_fsub_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_float(5.0);
-        t.thread_stack.push_float(3.0);
+        t.thread_stack.push::<f32>(5.0);
+        t.thread_stack.push::<f32>(3.0);
         let _ = fsub(&mut t);
     }
 
@@ -3224,8 +3241,8 @@ mod tests {
     #[should_panic]
     fn test_dsub_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_double(5.0);
-        t.thread_stack.push_double(3.0);
+        t.thread_stack.push::<f64>(5.0);
+        t.thread_stack.push::<f64>(3.0);
         let _ = dsub(&mut t);
     }
 
@@ -3235,8 +3252,8 @@ mod tests {
     #[should_panic]
     fn test_imul_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_int(3);
-        t.thread_stack.push_int(4);
+        t.thread_stack.push::<i32>(3);
+        t.thread_stack.push::<i32>(4);
         let _ = imul(&mut t);
     }
 
@@ -3244,8 +3261,8 @@ mod tests {
     #[should_panic]
     fn test_lmul_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_long(3);
-        t.thread_stack.push_long(4);
+        t.thread_stack.push::<i64>(3);
+        t.thread_stack.push::<i64>(4);
         let _ = lmul(&mut t);
     }
 
@@ -3253,8 +3270,8 @@ mod tests {
     #[should_panic]
     fn test_fmul_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_float(3.0);
-        t.thread_stack.push_float(4.0);
+        t.thread_stack.push::<f32>(3.0);
+        t.thread_stack.push::<f32>(4.0);
         let _ = fmul(&mut t);
     }
 
@@ -3262,8 +3279,8 @@ mod tests {
     #[should_panic]
     fn test_dmul_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_double(3.0);
-        t.thread_stack.push_double(4.0);
+        t.thread_stack.push::<f64>(3.0);
+        t.thread_stack.push::<f64>(4.0);
         let _ = dmul(&mut t);
     }
 
@@ -3272,34 +3289,34 @@ mod tests {
     #[test]
     fn test_idiv_by_zero_returns_arithmetic_exception() {
         let mut t = make_thread();
-        t.thread_stack.push_int(10);
-        t.thread_stack.push_int(0);
-        assert!(matches!(idiv(&mut t), Err(InstructionError::ArithmeticException)));
+        t.thread_stack.push::<i32>(10);
+        t.thread_stack.push::<i32>(0);
+        assert!(matches!(idiv(&mut t).unwrap_err().downcast_ref::<InstructionError>(), Some(InstructionError::ArithmeticException)));
     }
 
     #[test]
     #[should_panic]
     fn test_idiv_nonzero_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_int(10);
-        t.thread_stack.push_int(2);
+        t.thread_stack.push::<i32>(10);
+        t.thread_stack.push::<i32>(2);
         let _ = idiv(&mut t);
     }
 
     #[test]
     fn test_ldiv_by_zero_returns_arithmetic_exception() {
         let mut t = make_thread();
-        t.thread_stack.push_long(10);
-        t.thread_stack.push_long(0);
-        assert!(matches!(ldiv(&mut t), Err(InstructionError::ArithmeticException)));
+        t.thread_stack.push::<i64>(10);
+        t.thread_stack.push::<i64>(0);
+        assert!(matches!(ldiv(&mut t).unwrap_err().downcast_ref::<InstructionError>(), Some(InstructionError::ArithmeticException)));
     }
 
     #[test]
     #[should_panic]
     fn test_ldiv_nonzero_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_long(10);
-        t.thread_stack.push_long(2);
+        t.thread_stack.push::<i64>(10);
+        t.thread_stack.push::<i64>(2);
         let _ = ldiv(&mut t);
     }
 
@@ -3307,8 +3324,8 @@ mod tests {
     #[should_panic]
     fn test_fdiv_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_float(10.0);
-        t.thread_stack.push_float(2.0);
+        t.thread_stack.push::<f32>(10.0);
+        t.thread_stack.push::<f32>(2.0);
         let _ = fdiv(&mut t);
     }
 
@@ -3316,8 +3333,8 @@ mod tests {
     #[should_panic]
     fn test_ddiv_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_double(10.0);
-        t.thread_stack.push_double(2.0);
+        t.thread_stack.push::<f64>(10.0);
+        t.thread_stack.push::<f64>(2.0);
         let _ = ddiv(&mut t);
     }
 
@@ -3326,34 +3343,34 @@ mod tests {
     #[test]
     fn test_irem_by_zero_returns_arithmetic_exception() {
         let mut t = make_thread();
-        t.thread_stack.push_int(10);
-        t.thread_stack.push_int(0);
-        assert!(matches!(irem(&mut t), Err(InstructionError::ArithmeticException)));
+        t.thread_stack.push::<i32>(10);
+        t.thread_stack.push::<i32>(0);
+        assert!(matches!(irem(&mut t).unwrap_err().downcast_ref::<InstructionError>(), Some(InstructionError::ArithmeticException)));
     }
 
     #[test]
     #[should_panic]
     fn test_irem_nonzero_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_int(10);
-        t.thread_stack.push_int(3);
+        t.thread_stack.push::<i32>(10);
+        t.thread_stack.push::<i32>(3);
         let _ = irem(&mut t);
     }
 
     #[test]
     fn test_lrem_by_zero_returns_arithmetic_exception() {
         let mut t = make_thread();
-        t.thread_stack.push_long(10);
-        t.thread_stack.push_long(0);
-        assert!(matches!(lrem(&mut t), Err(InstructionError::ArithmeticException)));
+        t.thread_stack.push::<i64>(10);
+        t.thread_stack.push::<i64>(0);
+        assert!(matches!(lrem(&mut t).unwrap_err().downcast_ref::<InstructionError>(), Some(InstructionError::ArithmeticException)));
     }
 
     #[test]
     #[should_panic]
     fn test_lrem_nonzero_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_long(10);
-        t.thread_stack.push_long(3);
+        t.thread_stack.push::<i64>(10);
+        t.thread_stack.push::<i64>(3);
         let _ = lrem(&mut t);
     }
 
@@ -3361,8 +3378,8 @@ mod tests {
     #[should_panic]
     fn test_frem_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_float(10.0);
-        t.thread_stack.push_float(3.0);
+        t.thread_stack.push::<f32>(10.0);
+        t.thread_stack.push::<f32>(3.0);
         let _ = frem(&mut t);
     }
 
@@ -3370,8 +3387,8 @@ mod tests {
     #[should_panic]
     fn test_drem_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_double(10.0);
-        t.thread_stack.push_double(3.0);
+        t.thread_stack.push::<f64>(10.0);
+        t.thread_stack.push::<f64>(3.0);
         let _ = drem(&mut t);
     }
 
@@ -3381,7 +3398,7 @@ mod tests {
     #[should_panic]
     fn test_ineg_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_int(5);
+        t.thread_stack.push::<i32>(5);
         let _ = ineg(&mut t);
     }
 
@@ -3389,7 +3406,7 @@ mod tests {
     #[should_panic]
     fn test_lneg_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_long(5);
+        t.thread_stack.push::<i64>(5);
         let _ = lneg(&mut t);
     }
 
@@ -3397,7 +3414,7 @@ mod tests {
     #[should_panic]
     fn test_fneg_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_float(5.0);
+        t.thread_stack.push::<f32>(5.0);
         let _ = fneg(&mut t);
     }
 
@@ -3405,7 +3422,7 @@ mod tests {
     #[should_panic]
     fn test_dneg_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_double(5.0);
+        t.thread_stack.push::<f64>(5.0);
         let _ = dneg(&mut t);
     }
 
@@ -3415,8 +3432,8 @@ mod tests {
     #[should_panic]
     fn test_ishl_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_int(1);
-        t.thread_stack.push_int(2);
+        t.thread_stack.push::<i32>(1);
+        t.thread_stack.push::<i32>(2);
         let _ = ishl(&mut t);
     }
 
@@ -3424,8 +3441,8 @@ mod tests {
     #[should_panic]
     fn test_lshl_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_long(1); // value1 (long)
-        t.thread_stack.push_int(2);  // value2 (int shift amount)
+        t.thread_stack.push::<i64>(1); // value1 (long)
+        t.thread_stack.push::<i32>(2);  // value2 (int shift amount)
         let _ = lshl(&mut t);
     }
 
@@ -3433,8 +3450,8 @@ mod tests {
     #[should_panic]
     fn test_ishr_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_int(8);
-        t.thread_stack.push_int(2);
+        t.thread_stack.push::<i32>(8);
+        t.thread_stack.push::<i32>(2);
         let _ = ishr(&mut t);
     }
 
@@ -3442,8 +3459,8 @@ mod tests {
     #[should_panic]
     fn test_lshr_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_long(8); // value1 (long)
-        t.thread_stack.push_int(2);  // value2 (int shift amount)
+        t.thread_stack.push::<i64>(8); // value1 (long)
+        t.thread_stack.push::<i32>(2);  // value2 (int shift amount)
         let _ = lshr(&mut t);
     }
 
@@ -3451,8 +3468,8 @@ mod tests {
     #[should_panic]
     fn test_iushr_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_int(8);
-        t.thread_stack.push_int(2);
+        t.thread_stack.push::<i32>(8);
+        t.thread_stack.push::<i32>(2);
         let _ = iushr(&mut t);
     }
 
@@ -3460,8 +3477,8 @@ mod tests {
     #[should_panic]
     fn test_lushr_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_long(8); // value1 (long)
-        t.thread_stack.push_int(2);  // value2 (int shift amount)
+        t.thread_stack.push::<i64>(8); // value1 (long)
+        t.thread_stack.push::<i32>(2);  // value2 (int shift amount)
         let _ = lushr(&mut t);
     }
 
@@ -3471,8 +3488,8 @@ mod tests {
     #[should_panic]
     fn test_iand_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_int(0b1010);
-        t.thread_stack.push_int(0b1100);
+        t.thread_stack.push::<i32>(0b1010);
+        t.thread_stack.push::<i32>(0b1100);
         let _ = iand(&mut t);
     }
 
@@ -3480,8 +3497,8 @@ mod tests {
     #[should_panic]
     fn test_land_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_long(0b1010);
-        t.thread_stack.push_long(0b1100);
+        t.thread_stack.push::<i64>(0b1010);
+        t.thread_stack.push::<i64>(0b1100);
         let _ = land(&mut t);
     }
 
@@ -3489,8 +3506,8 @@ mod tests {
     #[should_panic]
     fn test_ior_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_int(0b1010);
-        t.thread_stack.push_int(0b1100);
+        t.thread_stack.push::<i32>(0b1010);
+        t.thread_stack.push::<i32>(0b1100);
         let _ = ior(&mut t);
     }
 
@@ -3498,8 +3515,8 @@ mod tests {
     #[should_panic]
     fn test_lor_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_long(0b1010);
-        t.thread_stack.push_long(0b1100);
+        t.thread_stack.push::<i64>(0b1010);
+        t.thread_stack.push::<i64>(0b1100);
         let _ = lor(&mut t);
     }
 
@@ -3507,8 +3524,8 @@ mod tests {
     #[should_panic]
     fn test_ixor_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_int(0b1010);
-        t.thread_stack.push_int(0b1100);
+        t.thread_stack.push::<i32>(0b1010);
+        t.thread_stack.push::<i32>(0b1100);
         let _ = ixor(&mut t);
     }
 
@@ -3516,8 +3533,8 @@ mod tests {
     #[should_panic]
     fn test_lxor_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_long(0b1010);
-        t.thread_stack.push_long(0b1100);
+        t.thread_stack.push::<i64>(0b1010);
+        t.thread_stack.push::<i64>(0b1100);
         let _ = lxor(&mut t);
     }
 
@@ -3535,7 +3552,7 @@ mod tests {
     #[should_panic]
     fn test_i2l_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_int(5);
+        t.thread_stack.push::<i32>(5);
         let _ = i2l(&mut t);
     }
 
@@ -3543,7 +3560,7 @@ mod tests {
     #[should_panic]
     fn test_i2f_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_int(5);
+        t.thread_stack.push::<i32>(5);
         let _ = i2f(&mut t);
     }
 
@@ -3551,7 +3568,7 @@ mod tests {
     #[should_panic]
     fn test_i2d_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_int(5);
+        t.thread_stack.push::<i32>(5);
         let _ = i2d(&mut t);
     }
 
@@ -3559,7 +3576,7 @@ mod tests {
     #[should_panic]
     fn test_l2i_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_long(5);
+        t.thread_stack.push::<i64>(5);
         let _ = l2i(&mut t);
     }
 
@@ -3567,7 +3584,7 @@ mod tests {
     #[should_panic]
     fn test_l2f_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_long(5);
+        t.thread_stack.push::<i64>(5);
         let _ = l2f(&mut t);
     }
 
@@ -3575,7 +3592,7 @@ mod tests {
     #[should_panic]
     fn test_l2d_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_long(5);
+        t.thread_stack.push::<i64>(5);
         let _ = l2d(&mut t);
     }
 
@@ -3583,7 +3600,7 @@ mod tests {
     #[should_panic]
     fn test_f2i_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_float(5.0);
+        t.thread_stack.push::<f32>(5.0);
         let _ = f2i(&mut t);
     }
 
@@ -3591,7 +3608,7 @@ mod tests {
     #[should_panic]
     fn test_f2l_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_float(5.0);
+        t.thread_stack.push::<f32>(5.0);
         let _ = f2l(&mut t);
     }
 
@@ -3599,7 +3616,7 @@ mod tests {
     #[should_panic]
     fn test_f2d_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_float(5.0);
+        t.thread_stack.push::<f32>(5.0);
         let _ = f2d(&mut t);
     }
 
@@ -3607,7 +3624,7 @@ mod tests {
     #[should_panic]
     fn test_d2i_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_double(5.0);
+        t.thread_stack.push::<f64>(5.0);
         let _ = d2i(&mut t);
     }
 
@@ -3615,7 +3632,7 @@ mod tests {
     #[should_panic]
     fn test_d2l_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_double(5.0);
+        t.thread_stack.push::<f64>(5.0);
         let _ = d2l(&mut t);
     }
 
@@ -3623,7 +3640,7 @@ mod tests {
     #[should_panic]
     fn test_d2f_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_double(5.0);
+        t.thread_stack.push::<f64>(5.0);
         let _ = d2f(&mut t);
     }
 
@@ -3631,7 +3648,7 @@ mod tests {
     #[should_panic]
     fn test_i2b_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_int(5);
+        t.thread_stack.push::<i32>(5);
         let _ = i2b(&mut t);
     }
 
@@ -3639,7 +3656,7 @@ mod tests {
     #[should_panic]
     fn test_i2c_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_int(65);
+        t.thread_stack.push::<i32>(65);
         let _ = i2c(&mut t);
     }
 
@@ -3647,7 +3664,7 @@ mod tests {
     #[should_panic]
     fn test_i2s_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_int(5);
+        t.thread_stack.push::<i32>(5);
         let _ = i2s(&mut t);
     }
 
@@ -3657,8 +3674,8 @@ mod tests {
     #[should_panic]
     fn test_lcmp_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_long(1);
-        t.thread_stack.push_long(2);
+        t.thread_stack.push::<i64>(1);
+        t.thread_stack.push::<i64>(2);
         let _ = lcmp(&mut t);
     }
 
@@ -3666,8 +3683,8 @@ mod tests {
     #[should_panic]
     fn test_fcmpl_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_float(1.0);
-        t.thread_stack.push_float(2.0);
+        t.thread_stack.push::<f32>(1.0);
+        t.thread_stack.push::<f32>(2.0);
         let _ = fcmpl(&mut t);
     }
 
@@ -3675,8 +3692,8 @@ mod tests {
     #[should_panic]
     fn test_fcmpg_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_float(1.0);
-        t.thread_stack.push_float(2.0);
+        t.thread_stack.push::<f32>(1.0);
+        t.thread_stack.push::<f32>(2.0);
         let _ = fcmpg(&mut t);
     }
 
@@ -3684,8 +3701,8 @@ mod tests {
     #[should_panic]
     fn test_dcmpl_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_double(1.0);
-        t.thread_stack.push_double(2.0);
+        t.thread_stack.push::<f64>(1.0);
+        t.thread_stack.push::<f64>(2.0);
         let _ = dcmpl(&mut t);
     }
 
@@ -3693,8 +3710,8 @@ mod tests {
     #[should_panic]
     fn test_dcmpg_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_double(1.0);
-        t.thread_stack.push_double(2.0);
+        t.thread_stack.push::<f64>(1.0);
+        t.thread_stack.push::<f64>(2.0);
         let _ = dcmpg(&mut t);
     }
 
@@ -3837,15 +3854,15 @@ mod tests {
     #[test]
     fn test_arraylength_null_ref_throws() {
         let mut t = make_thread();
-        t.thread_stack.push_ref(0);
-        assert!(matches!(arraylength(&mut t), Err(InstructionError::NullPointerException)));
+        t.thread_stack.push(Reference::new(0));
+        assert!(matches!(arraylength(&mut t).unwrap_err().downcast_ref::<InstructionError>(), Some(InstructionError::NullPointerException)));
     }
 
     #[test]
     #[should_panic]
     fn test_arraylength_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_ref(1);
+        t.thread_stack.push(Reference::new(1));
         let _ = arraylength(&mut t);
     }
 
@@ -3854,15 +3871,15 @@ mod tests {
     #[test]
     fn test_athrow_null_ref_throws() {
         let mut t = make_thread();
-        t.thread_stack.push_ref(0);
-        assert!(matches!(athrow(&mut t), Err(InstructionError::NullPointerException)));
+        t.thread_stack.push(Reference::new(0));
+        assert!(matches!(athrow(&mut t).unwrap_err().downcast_ref::<InstructionError>(), Some(InstructionError::NullPointerException)));
     }
 
     #[test]
     #[should_panic]
     fn test_athrow_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_ref(1);
+        t.thread_stack.push(Reference::new(1));
         let _ = athrow(&mut t);
     }
 
@@ -3880,30 +3897,30 @@ mod tests {
     #[test]
     fn test_monitorenter_null_ref_throws() {
         let mut t = make_thread();
-        t.thread_stack.push_ref(0);
-        assert!(matches!(monitorenter(&mut t), Err(InstructionError::NullPointerException)));
+        t.thread_stack.push(Reference::new(0));
+        assert!(matches!(monitorenter(&mut t).unwrap_err().downcast_ref::<InstructionError>(), Some(InstructionError::NullPointerException)));
     }
 
     #[test]
     #[should_panic]
     fn test_monitorenter_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_ref(1);
+        t.thread_stack.push(Reference::new(1));
         let _ = monitorenter(&mut t);
     }
 
     #[test]
     fn test_monitorexit_null_ref_throws() {
         let mut t = make_thread();
-        t.thread_stack.push_ref(0);
-        assert!(matches!(monitorexit(&mut t), Err(InstructionError::NullPointerException)));
+        t.thread_stack.push(Reference::new(0));
+        assert!(matches!(monitorexit(&mut t).unwrap_err().downcast_ref::<InstructionError>(), Some(InstructionError::NullPointerException)));
     }
 
     #[test]
     #[should_panic]
     fn test_monitorexit_unimplemented() {
         let mut t = make_thread();
-        t.thread_stack.push_ref(1);
+        t.thread_stack.push(Reference::new(1));
         let _ = monitorexit(&mut t);
     }
 
@@ -3940,7 +3957,7 @@ mod tests {
     #[test]
     fn test_reserved_opcode_returns_unknown_error() {
         let mut t = make_thread();
-        assert!(matches!(call_by_opcode(&mut t, 0xca), Err(InstructionError::UnknownError)));
-        assert!(matches!(call_by_opcode(&mut t, 0xff), Err(InstructionError::UnknownError)));
+        assert!(matches!(call_by_opcode(&mut t, 0xca).unwrap_err().downcast_ref::<InstructionError>(), Some(InstructionError::UnknownError)));
+        assert!(matches!(call_by_opcode(&mut t, 0xff).unwrap_err().downcast_ref::<InstructionError>(), Some(InstructionError::UnknownError)));
     }
 }

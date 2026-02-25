@@ -3,7 +3,7 @@ use crate::runtime::array::AnyArrayValue;
 use crate::runtime::object::ObjectValue;
 use crate::runtime::interface::InterfaceValue;
 
-static REFERENCE_TABLE: Mutex<ReferenceTable> = Mutex::new(ReferenceTable { table: Vec::new() });
+pub static REFERENCE_TABLE: Mutex<ReferenceTable> = Mutex::new(ReferenceTable { table: Vec::new() });
 
 pub static NULL_REF: Reference = Reference { ref_index: 0 };
 
@@ -26,6 +26,7 @@ impl ReferenceTable {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Reference {
     pub ref_index: u32,
 }
@@ -52,4 +53,42 @@ pub enum ReferenceValue {
     Object(ObjectValue),
     Array(AnyArrayValue),
     Interface(InterfaceValue),
+}
+
+impl ReferenceValue {
+    pub fn is_object(&self) -> bool {
+        matches!(self, ReferenceValue::Object(_))
+    }
+
+    pub fn as_object(&self) -> Option<&ObjectValue> {
+        if let ReferenceValue::Object(obj) = self {
+            Some(obj)
+        } else {
+            None
+        }
+    }
+
+    pub fn is_array(&self) -> bool {
+        matches!(self, ReferenceValue::Array(_))
+    }
+
+    pub fn as_array(&self) -> Option<&AnyArrayValue> {
+        if let ReferenceValue::Array(arr) = self {
+            Some(arr)
+        } else {
+            None
+        }
+    }
+
+    pub fn is_interface(&self) -> bool {
+        matches!(self, ReferenceValue::Interface(_))
+    }
+
+    pub fn as_interface(&self) -> Option<&InterfaceValue> {
+        if let ReferenceValue::Interface(intf) = self {
+            Some(intf)
+        } else {
+            None
+        }
+    }
 }

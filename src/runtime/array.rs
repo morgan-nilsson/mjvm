@@ -37,6 +37,95 @@ pub enum AnyArrayValue {
     F64(ArrayValue<f64>),
 }
 
+impl AnyArrayValue {
+    pub fn len(&self) -> usize {
+        match self {
+            AnyArrayValue::Bool(a) => a.len(),
+            AnyArrayValue::I8(a)   => a.len(),
+            AnyArrayValue::Char(a)  => a.len(),
+            AnyArrayValue::I16(a)  => a.len(),
+            AnyArrayValue::I32(a)  => a.len(),
+            AnyArrayValue::I64(a)  => a.len(),
+            AnyArrayValue::F32(a)  => a.len(),
+            AnyArrayValue::F64(a)  => a.len(),
+        }
+    }
+
+    pub fn get(&self, index: usize) -> Option<Box<dyn std::any::Any>> {
+        match self {
+            AnyArrayValue::Bool(a) => a.get(index).map(|v| Box::new(*v) as Box<dyn std::any::Any>),
+            AnyArrayValue::I8(a)   => a.get(index).map(|v| Box::new(*v) as Box<dyn std::any::Any>),
+            AnyArrayValue::Char(a)  => a.get(index).map(|v| Box::new(*v) as Box<dyn std::any::Any>),
+            AnyArrayValue::I16(a)  => a.get(index).map(|v| Box::new(*v) as Box<dyn std::any::Any>),
+            AnyArrayValue::I32(a)  => a.get(index).map(|v| Box::new(*v) as Box<dyn std::any::Any>),
+            AnyArrayValue::I64(a)  => a.get(index).map(|v| Box::new(*v) as Box<dyn std::any::Any>),
+            AnyArrayValue::F32(a)  => a.get(index).map(|v| Box::new(*v) as Box<dyn std::any::Any>),
+            AnyArrayValue::F64(a)  => a.get(index).map(|v| Box::new(*v) as Box<dyn std::any::Any>),
+        }
+    }
+
+    pub fn set(&mut self, index: usize, value: Box<dyn std::any::Any>) -> Result<(), String> {
+        match self {
+            AnyArrayValue::Bool(a) => {
+                if let Ok(v) = value.downcast::<bool>() {
+                    a.set(index, *v)
+                } else {
+                    Err("Type mismatch for Bool array".into())
+                }
+            }
+            AnyArrayValue::I8(a) => {
+                if let Ok(v) = value.downcast::<i8>() {
+                    a.set(index, *v)
+                } else {
+                    Err("Type mismatch for I8 array".into())
+                }
+            }
+            AnyArrayValue::Char(a) => {
+                if let Ok(v) = value.downcast::<char>() {
+                    a.set(index, *v)
+                } else {
+                    Err("Type mismatch for Char array".into())
+                }
+            }
+            AnyArrayValue::I16(a) => {
+                if let Ok(v) = value.downcast::<i16>() {
+                    a.set(index, *v)
+                } else {
+                    Err("Type mismatch for I16 array".into())
+                }
+            }
+            AnyArrayValue::I32(a) => {
+                if let Ok(v) = value.downcast::<i32>() {
+                    a.set(index, *v)
+                } else {
+                    Err("Type mismatch for I32 array".into())
+                }
+            }
+            AnyArrayValue::I64(a) => {
+                if let Ok(v) = value.downcast::<i64>() {
+                    a.set(index, *v)
+                } else {
+                    Err("Type mismatch for I64 array".into())
+                }
+            }
+            AnyArrayValue::F32(a) => {
+                if let Ok(v) = value.downcast::<f32>() {
+                    a.set(index, *v)
+                } else {
+                    Err("Type mismatch for F32 array".into())
+                }
+            }
+            AnyArrayValue::F64(a) => {
+                if let Ok(v) = value.downcast::<f64>() {
+                    a.set(index, *v)
+                } else {
+                    Err("Type mismatch for F64 array".into())
+                }
+            }
+        }
+    }
+}
+
 pub fn create_array_from_char(c: char, length: u16) -> AnyArrayValue {
     match c {
         'Z' => AnyArrayValue::Bool(ArrayValue::<bool>::new(length)),
