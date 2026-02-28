@@ -1,6 +1,7 @@
 use std::io::BufRead;
 use std::io::BufReader;
 use std::io::Read;
+use anyhow::Ok;
 use bitflags::bitflags;
 use anyhow::Result;
 use anyhow::anyhow;
@@ -465,6 +466,10 @@ impl ConstantPoolMethodInfo {
 
         for _ in 0..attributes_count {
             let attribute_info = AttributeInfo::from_reader(buf_reader, constant_pool_info)?;
+            if matches!(attribute_info, AttributeInfo::UnknownAttribute) {
+                // skip unknown attributes but do not include them in the method info
+                continue;
+            }
             attributes.push(attribute_info);
         }
 
@@ -528,6 +533,7 @@ pub enum AttributeInfo {
     NestMembers { number_of_classes: u16, classes: Vec<u16> },
     Record { number_of_components: u16, components: Vec<RecordComponentInfo> },
     PermittedSubclasses { number_of_classes: u16, classes: Vec<u16> },
+    UnknownAttribute,
 }
 
 bitflags! {
@@ -1007,8 +1013,12 @@ impl AttributeInfo {
             }
 
 
-            // todo address this. Should not be a panic
-            _ => panic!("Unsupported attribute name '{}' in class file this shouldnt be a panic see 4.7.2", attribute_name),   
+            _ => {
+                // skip the attribute content
+                let mut skip_buffer = vec![0; attribute_length as usize];
+                buf_reader.read_exact(&mut skip_buffer)?;
+                Ok(AttributeInfo::UnknownAttribute)
+            }
         }
 
     }

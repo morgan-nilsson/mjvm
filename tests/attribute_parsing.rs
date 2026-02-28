@@ -55,19 +55,10 @@ fn minimal_class_with_unknown_attr() -> Vec<u8> {
 
 // ── Unknown attribute ─────────────────────────────────────────────────────────
 //
-// JVM spec §4.7.2: "an attribute with an unrecognised name must be silently
+// JVM spec §4.7.2: "an attribute with an unrecognized name must be silently
 // ignored". The parser currently panics instead.
 
 #[test]
-fn unknown_attribute_currently_panics() {
-    // Catch the panic to confirm the bug is present without failing the process.
-    let bytes = minimal_class_with_unknown_attr();
-    let result = std::panic::catch_unwind(|| ClassFile::from_reader(bytes.as_slice()));
-    assert!(result.is_err(), "Expected panic for unknown attribute (known bug)");
-}
-
-#[test]
-#[ignore = "known bug: unknown attributes must be silently skipped (§4.7.2), currently panics"]
 fn unknown_attribute_is_silently_skipped() {
     let bytes = minimal_class_with_unknown_attr();
     let cf = ClassFile::from_reader(bytes.as_slice())
