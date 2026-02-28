@@ -5,6 +5,10 @@ use log::warn;
 
 pub struct Thread {
     pub pc: usize,
+    /// Bytecode of the current method, consumed by read_*_from_pc.
+    pub code: Vec<u8>,
+    /// Local variable array for the current frame (4 bytes per slot).
+    pub local_vars: LocalVars,
     pub thread_stack: ThreadStack,
     pub jvm_heap: Arc<Mutex<JVMHeap>>,
     pub method_area: Arc<Mutex<MethodArea>>,
@@ -13,16 +17,34 @@ pub struct Thread {
 }
 
 impl Thread {
+    /// Read one byte from `code[pc]` and advance pc.
     pub fn read_byte_from_pc(&mut self) -> Option<u8> {
-        todo!()
+        let byte = self.code.get(self.pc).copied();
+        if byte.is_some() {
+            self.pc += 1;
+        }
+        byte
     }
 
+    /// Read a big-endian u16 from `code[pc..pc+2]` and advance pc by 2.
     pub fn read_short_from_pc(&mut self) -> Option<u16> {
-        todo!()
+        if self.pc + 2 > self.code.len() {
+            return None;
+        }
+        let high = self.code[self.pc] as u16;
+        let low  = self.code[self.pc + 1] as u16;
+        self.pc += 2;
+        Some((high << 8) | low)
     }
 
+    /// Read a big-endian u32 from `code[pc..pc+4]` and advance pc by 4.
     pub fn read_int_from_pc(&mut self) -> Option<u32> {
-        todo!()
+        if self.pc + 4 > self.code.len() {
+            return None;
+        }
+        let b = &self.code[self.pc..self.pc + 4];
+        self.pc += 4;
+        Some(u32::from_be_bytes([b[0], b[1], b[2], b[3]]))
     }
 
     pub fn read_opcode(&mut self) -> Option<u8> {
@@ -137,6 +159,47 @@ impl ThreadStack {
 }
 
 
+
+/// JVM local variable array for a single frame.
+///
+/// Each slot is 4 bytes.  `long` / `double` values occupy two consecutive
+/// slots (the lower-numbered slot holds the value, just as in the JVM spec).
+/// Slot indices follow: `set::<i64>(n, v)` writes `v` starting at byte
+/// offset `n * 4`, using 8 bytes (slots n and n+1).
+pub struct LocalVars {
+    data: Vec<u8>,
+}
+
+impl LocalVars {
+    /// Allocate storage for `num_slots` 32-bit slots (zero-initialised).
+    pub fn new(num_slots: usize) -> Self {
+        LocalVars { data: vec![0u8; num_slots * 4] }
+    }
+
+    /// Load a typed value from slot `slot`.  Returns `None` when out of bounds.
+    pub fn get<T: Stackable>(&self, slot: usize) -> Option<T> {
+        let offset = slot * 4;
+        let size   = T::SIZE;
+        if offset + size > self.data.len() {
+            return None;
+        }
+        Some(T::from_bytes(&self.data[offset..offset + size]))
+    }
+
+    /// Store a typed value into slot `slot`, growing the backing store if needed.
+    pub fn set<T: Stackable>(&mut self, slot: usize, value: T) {
+        let bytes  = value.to_bytes();
+        let offset = slot * 4;
+        if offset + bytes.len() > self.data.len() {
+            self.data.resize(offset + bytes.len(), 0);
+        }
+        self.data[offset..offset + bytes.len()].copy_from_slice(&bytes);
+    }
+
+    pub fn byte_length(&self) -> usize {
+        self.data.len()
+    }
+}
 
 pub struct JVMHeap {
 

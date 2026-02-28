@@ -24,9 +24,13 @@ impl ReferenceTable {
     pub fn get_reference(&self, reference: &Reference) -> Option<&Box<ReferenceValue>> {
         self.table.get(reference.ref_index as usize)
     }
+
+    pub fn get_mut_reference(&mut self, reference: &Reference) -> Option<&mut Box<ReferenceValue>> {
+        self.table.get_mut(reference.ref_index as usize)
+    }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Reference {
     pub ref_index: u32,
 }
@@ -49,6 +53,12 @@ impl Reference {
     }
 }
 
+impl Default for Reference {
+    fn default() -> Self {
+        NULL_REF.clone()
+    }
+}
+
 pub enum ReferenceValue {
     Object(ObjectValue),
     Array(AnyArrayValue),
@@ -68,6 +78,14 @@ impl ReferenceValue {
         }
     }
 
+    pub fn as_mut_object(&mut self) -> Option<&mut ObjectValue> {
+        if let ReferenceValue::Object(obj) = self {
+            Some(obj)
+        } else {
+            None
+        }
+    }
+
     pub fn is_array(&self) -> bool {
         matches!(self, ReferenceValue::Array(_))
     }
@@ -80,11 +98,27 @@ impl ReferenceValue {
         }
     }
 
+    pub fn as_mut_array(&mut self) -> Option<&mut AnyArrayValue> {
+        if let ReferenceValue::Array(arr) = self {
+            Some(arr)
+        } else {
+            None
+        }
+    }
+
     pub fn is_interface(&self) -> bool {
         matches!(self, ReferenceValue::Interface(_))
     }
 
     pub fn as_interface(&self) -> Option<&InterfaceValue> {
+        if let ReferenceValue::Interface(intf) = self {
+            Some(intf)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_mut_interface(&mut self) -> Option<&mut InterfaceValue> {
         if let ReferenceValue::Interface(intf) = self {
             Some(intf)
         } else {

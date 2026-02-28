@@ -1,10 +1,17 @@
+use std::array;
+use std::ops::Shl;
+
+use crate::runtime::array::create_array_from_char;
 use crate::runtime::thread::Thread;
 use crate::runtime::reference_table::Reference;
+use crate::runtime::array::AnyArrayValue;
 use crate::runtime::reference_table::NULL_REF;
 use crate::runtime::reference_table::REFERENCE_TABLE;
+use crate::runtime::reference_table::ReferenceValue;
 
 use anyhow::Ok;
 use anyhow::Result;
+use clap::builder::ValueParser;
 use thiserror::Error;
 
 pub fn preform_instruction(thread: &mut Thread) {
@@ -286,8 +293,14 @@ fn aaload(thread: &mut Thread) -> Result<()> {
         return Err(InstructionError::InternalError.into());
     }
 
-    // ensure array index is within bounds else throw ArrayIndexOutOfBoundsException
     let array = array.as_array().map(|a| a).ok_or(InstructionError::InternalError)?;
+
+    // ensure the array is of type [reference]
+    if !matches!(array, AnyArrayValue::REF(_)) {
+        return Err(InstructionError::InternalError.into());
+    }
+
+    // ensure array index is within bounds else throw ArrayIndexOutOfBoundsException
     if index < 0 || index >= array.len() as i32 {
         return Err(InstructionError::ArrayIndexOutOfBoundsException.into());
     }
@@ -318,12 +331,30 @@ fn aastore(thread: &mut Thread) -> Result<()> {
     }
 
     // get the array referenced
+    let mut lock = REFERENCE_TABLE.lock().map(|r| r).map_err(|_| InstructionError::InternalError)?;
+    let array = lock.get_mut_reference(&array_ref).ok_or(InstructionError::InternalError)?;
+
+    // ensure this is an array
+    if !array.is_array() {
+        return Err(InstructionError::InternalError.into());
+    }
+
+    let array: &mut AnyArrayValue = array.as_mut_array().ok_or(InstructionError::InternalError)?;
+
+    // ensure the array is of type [reference]
+    if !matches!(array, AnyArrayValue::REF(_)) {
+        return Err(InstructionError::InternalError.into());
+    }
 
     // ensure array index is within bounds else throw ArrayIndexOutOfBoundsException
+    if index < 0 || index >= array.len() as i32 {
+        return Err(InstructionError::ArrayIndexOutOfBoundsException.into());
+    }
 
     // set the value at the index to the value popped from the stack
+    array.set(index as usize, Box::new(value)).map_err(|_| InstructionError::InternalError)?;
 
-    todo!("Implement aastore instruction");
+    Ok(())
 }
 
 fn aconst_null(thread: &mut Thread) -> Result<()> {
@@ -340,44 +371,57 @@ fn aload(thread: &mut Thread) -> Result<()> {
     }).ok_or(InstructionError::InternalError)?;
 
     // ensure index is within bounds of local variable array else throw InstructionsError::InternalError
+    if index >= thread.local_vars.byte_length() as u16 {
+        return Err(InstructionError::InternalError.into());
+    }
 
     // ensure the local variable at the index is a reference else throw InstructionsError::InternalError
+    let local_var = thread.local_vars.get::<Reference>(index as usize).ok_or(InstructionError::InternalError)?;
 
     // push the reference onto the stack
+    thread.thread_stack.push(local_var.clone());
 
-    todo!("Implement aload instruction");
+    Ok(())
 }
 
 fn aload_0(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 0 is a reference else throw InstructionsError::InternalError
+    let local_var = thread.local_vars.get::<Reference>(0).ok_or(InstructionError::InternalError)?;
 
     // push the reference from the local variable at index 0 onto the stack
+    thread.thread_stack.push(local_var.clone());
 
-    todo!("Implement aload_0 instruction");
+    Ok(())
 }
 
 fn aload_1(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 1 is a reference else throw InstructionsError::InternalError
+    let local_var = thread.local_vars.get::<Reference>(1).ok_or(InstructionError::InternalError)?;
 
     // push the reference from the local variable at index 1 onto the stack
+    thread.thread_stack.push(local_var.clone());
 
-    todo!("Implement aload_1 instruction");
+    Ok(())
 }
 
 fn aload_2(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 2 is a reference else throw InstructionsError::InternalError
+    let local_var = thread.local_vars.get::<Reference>(2).ok_or(InstructionError::InternalError)?;
 
     // push the reference from the local variable at index 2 onto the stack
+    thread.thread_stack.push(local_var.clone());
 
-    todo!("Implement aload_2 instruction");
+    Ok(())
 }
 
 fn aload_3(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 3 is a reference else throw InstructionsError::InternalError
+    let local_var = thread.local_vars.get::<Reference>(3).ok_or(InstructionError::InternalError)?;
 
     // push the reference from the local variable at index 3 onto the stack
+    thread.thread_stack.push(local_var.clone());
 
-    todo!("Implement aload_3 instruction");
+    Ok(())
 }
 
 fn anewarray(thread: &mut Thread) -> Result<()> {
@@ -411,11 +455,20 @@ fn arraylength(thread: &mut Thread) -> Result<()> {
     }
 
     // get the array referenced
+    let lock = REFERENCE_TABLE.lock().map(|r| r).map_err(|_| InstructionError::InternalError)?;
+    let array = lock.get_reference(&array_ref).ok_or(InstructionError::InternalError)?;
+
+    // ensure this is an array
+    if !array.is_array() {
+        return Err(InstructionError::InternalError.into());
+    }
+
+    let array = array.as_array().map(|a| a).ok_or(InstructionError::InternalError)?;
 
     // push the length of the array onto the stack
+    thread.thread_stack.push(array.len() as i32);
 
-    todo!("Implement arraylength instruction");
-
+    Ok(())
 }
 
 fn astore(thread: &mut Thread) -> Result<()> {
@@ -425,36 +478,50 @@ fn astore(thread: &mut Thread) -> Result<()> {
     }).ok_or(InstructionError::InternalError)?;
 
     // ensure index is within bounds of local variable array else throw InstructionsError::InternalError
+    if index >= thread.local_vars.byte_length() as u16 {
+        return Err(InstructionError::InternalError.into());
+    }
 
     // ensure the local variable at the index is a reference else throw InstructionsError::InternalError
+    thread.local_vars.get::<Reference>(index as usize).ok_or(InstructionError::InternalError)?;
 
     // pop the reference from the stack and store it in the local variable at the index
+    let value = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
+    thread.local_vars.set(index as usize, value);
 
-    todo!("Implement astore instruction");
+    Ok(())
 }
 
 fn astore_0(thread: &mut Thread) -> Result<()> {
     // pop the reference from the stack and store it in the local variable at index 0
+    let value = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
+    thread.local_vars.set(0, value);
 
-    todo!("Implement astore_0 instruction");
+    Ok(())
 }
 
 fn astore_1(thread: &mut Thread) -> Result<()> {
     // pop the reference from the stack and store it in the local variable at index 1
+    let value = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
+    thread.local_vars.set(1, value);
 
-    todo!("Implement astore_1 instruction");
+    Ok(())
 }
 
 fn astore_2(thread: &mut Thread) -> Result<()> {
     // pop the reference from the stack and store it in the local variable at index 2
+    let value = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
+    thread.local_vars.set(2, value);
 
-    todo!("Implement astore_2 instruction");
+    Ok(())
 }
 
 fn astore_3(thread: &mut Thread) -> Result<()> {
     // pop the reference from the stack and store it in the local variable at index 3
+    let value = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
+    thread.local_vars.set(3, value);
 
-    todo!("Implement astore_3 instruction");
+    Ok(())
 }
 
 fn athrow(thread: &mut Thread) -> Result<()> {
@@ -480,12 +547,32 @@ fn baload(thread: &mut Thread) -> Result<()> {
     }
 
     // get the array referenced
+    let lock = REFERENCE_TABLE.lock().map(|r| r).map_err(|_| InstructionError::InternalError)?;
+    let array = lock.get_reference(&array_ref).ok_or(InstructionError::InternalError)?;
+
+    // ensure this is an array
+    if !array.is_array() {
+        return Err(InstructionError::InternalError.into());
+    }
+
+    let array = array.as_array().map(|a| a).ok_or(InstructionError::InternalError)?;
+
+    // ensure the array is of type boolean
+    if !matches!(array, AnyArrayValue::Bool(_)){
+        return Err(InstructionError::InternalError.into());
+    }
 
     // ensure array index is within bounds else throw ArrayIndexOutOfBoundsException
+    if index < 0 || index >= array.len() as i32 {
+        return Err(InstructionError::ArrayIndexOutOfBoundsException.into());
+    }
 
     // push the value at the index onto the stack
+    let value: bool = array.get(index as usize).ok_or(InstructionError::InternalError)?.downcast_ref::<bool>().ok_or(InstructionError::InternalError)?.clone();
 
-    todo!("Implement baload instruction");
+    thread.thread_stack.push(value);
+
+    Ok(())
 }
 
 fn bastore(thread: &mut Thread) -> Result<()> {
@@ -498,12 +585,31 @@ fn bastore(thread: &mut Thread) -> Result<()> {
     }
 
     // get the array referenced
+    let mut lock = REFERENCE_TABLE.lock().map(|r| r).map_err(|_| InstructionError::InternalError)?;
+    let array = lock.get_mut_reference(&array_ref).ok_or(InstructionError::InternalError)?;
+
+    // ensure this is an array
+    if !array.is_array() {
+        return Err(InstructionError::InternalError.into());
+    }
+
+    let array: &mut AnyArrayValue = array.as_mut_array().ok_or(InstructionError::InternalError)?;
+
+    // ensure the array is of type boolean
+    if !matches!(array, AnyArrayValue::Bool(_)){
+        return Err(InstructionError::InternalError.into());
+    }
 
     // ensure array index is within bounds else throw ArrayIndexOutOfBoundsException
+    if index < 0 || index >= array.len() as i32 {
+        return Err(InstructionError::ArrayIndexOutOfBoundsException.into());
+    }
 
     // set the value at the index to the value popped from the stack
+    array.set(index as usize, Box::new(value != 0)).map_err(|_| InstructionError::InternalError)?;
 
-    todo!("Implement bastore instruction");
+    Ok(())
+
 }
 
 fn bipush(thread: &mut Thread) -> Result<()> {
@@ -523,16 +629,35 @@ fn caload(thread: &mut Thread) -> Result<()> {
     }
 
     // get the array referenced
+    let lock = REFERENCE_TABLE.lock().map(|r| r).map_err(|_| InstructionError::InternalError)?;
+    let array = lock.get_reference(&array_ref).ok_or(InstructionError::InternalError)?;
+
+    // ensure this is an array
+    if !array.is_array() {
+        return Err(InstructionError::InternalError.into());
+    }
+
+    let array = array.as_array().map(|a| a).ok_or(InstructionError::InternalError)?;
+
+    // ensure the array is of type char
+    if !matches!(array, AnyArrayValue::Char(_)){
+        return Err(InstructionError::InternalError.into());
+    }
 
     // ensure array index is within bounds else throw ArrayIndexOutOfBoundsException
+    if index < 0 || index >= array.len() as i32 {
+        return Err(InstructionError::ArrayIndexOutOfBoundsException.into());
+    }
 
     // push the value at the index onto the stack
+    let value: char = array.get(index as usize).ok_or(InstructionError::InternalError)?.downcast_ref::<char>().ok_or(InstructionError::InternalError)?.clone();
+    thread.thread_stack.push(value);
 
-    todo!("Implement caload instruction");
+    Ok(())
 }
 
 fn castore(thread: &mut Thread) -> Result<()> {
-    let value = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
+    let value = thread.thread_stack.pop::<char>().ok_or(InstructionError::InternalError)?;
     let index = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
     let array_ref = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
 
@@ -541,12 +666,30 @@ fn castore(thread: &mut Thread) -> Result<()> {
     }
 
     // get the array referenced
+    let mut lock = REFERENCE_TABLE.lock().map(|r| r).map_err(|_| InstructionError::InternalError)?;
+    let array = lock.get_mut_reference(&array_ref).ok_or(InstructionError::InternalError)?;
+
+    // ensure this is an array
+    if !array.is_array() {
+        return Err(InstructionError::InternalError.into());
+    }
+
+    let array: &mut AnyArrayValue = array.as_mut_array().ok_or(InstructionError::InternalError)?;
+
+    // ensure the array is of type char
+    if !matches!(array, AnyArrayValue::Char(_)){
+        return Err(InstructionError::InternalError.into());
+    }
 
     // ensure array index is within bounds else throw ArrayIndexOutOfBoundsException
+    if index < 0 || index >= array.len() as i32 {
+        return Err(InstructionError::ArrayIndexOutOfBoundsException.into());
+    }
 
     // set the value at the index to the value popped from the stack
+    array.set(index as usize, Box::new(value)).map_err(|_| InstructionError::InternalError)?;
 
-    todo!("Implement castore instruction");
+    Ok(())
 }
 
 fn checkcast(thread: &mut Thread) -> Result<()> {
@@ -565,30 +708,30 @@ fn d2f(thread: &mut Thread) -> Result<()> {
     let value = thread.thread_stack.pop::<f64>().ok_or(InstructionError::InternalError)?;
 
     // convert the double value to a float value
-
     // push the float value onto the stack
+    thread.thread_stack.push(value as f32);
 
-    todo!("Implement d2f instruction");
+    Ok(())
 }
 
 fn d2i(thread: &mut Thread) -> Result<()> {
     let value = thread.thread_stack.pop::<f64>().ok_or(InstructionError::InternalError)?;
 
     // convert the double value to an int value
-
     // push the int value onto the stack
+    thread.thread_stack.push(value as i32);
 
-    todo!("Implement d2i instruction");
+    Ok(())
 }
 
 fn d2l(thread: &mut Thread) -> Result<()> {
     let value = thread.thread_stack.pop::<f64>().ok_or(InstructionError::InternalError)?;
 
     // convert the double value to a long value
-
     // push the long value onto the stack
+    thread.thread_stack.push(value as i64);
 
-    todo!("Implement d2l instruction");
+    Ok(())
 }
 
 fn dadd(thread: &mut Thread) -> Result<()> {
@@ -596,10 +739,10 @@ fn dadd(thread: &mut Thread) -> Result<()> {
     let value1 = thread.thread_stack.pop::<f64>().ok_or(InstructionError::InternalError)?;
 
     // add the two double values
-
     // push the result onto the stack
+    thread.thread_stack.push(value1 + value2);
 
-    todo!("Implement dadd instruction");
+    Ok(())
 }
 
 fn daload(thread: &mut Thread) -> Result<()> {
@@ -611,12 +754,32 @@ fn daload(thread: &mut Thread) -> Result<()> {
     }
 
     // get the array referenced
+    let lock = REFERENCE_TABLE.lock().map(|r| r).map_err(|_| InstructionError::InternalError)?;
+    let array = lock.get_reference(&array_ref).ok_or(InstructionError::InternalError)?;
+
+    // ensure this is an array
+    if !array.is_array() {
+        return Err(InstructionError::InternalError.into());
+    }
+
+    let array = array.as_array().map(|a| a).ok_or(InstructionError::InternalError)?;
+
+    // ensure the array is of type double
+    if !matches!(array, AnyArrayValue::F64(_)){
+        return Err(InstructionError::InternalError.into());
+    }
 
     // ensure array index is within bounds else throw ArrayIndexOutOfBoundsException
+    if index < 0 || index >= array.len() as i32 {
+        return Err(InstructionError::ArrayIndexOutOfBoundsException.into());
+    }
 
     // push the value at the index onto the stack
+    let value: f64 = array.get(index as usize).ok_or(InstructionError::InternalError)?.downcast_ref::<f64>().ok_or(InstructionError::InternalError)?.clone();
+    thread.thread_stack.push(value);
 
-    todo!("Implement daload instruction");
+    Ok(())
+
 }
 
 fn dastore(thread: &mut Thread) -> Result<()> {
@@ -629,12 +792,30 @@ fn dastore(thread: &mut Thread) -> Result<()> {
     }
 
     // get the array referenced
+    let mut lock = REFERENCE_TABLE.lock().map(|r| r).map_err(|_| InstructionError::InternalError)?;
+    let array = lock.get_mut_reference(&array_ref).ok_or(InstructionError::InternalError)?;
+
+    // ensure this is an array
+    if !array.is_array() {
+        return Err(InstructionError::InternalError.into());
+    }
+
+    let array: &mut AnyArrayValue = array.as_mut_array().ok_or(InstructionError::InternalError)?;
+
+    // ensure the array is of type double
+    if !matches!(array, AnyArrayValue::F64(_)){
+        return Err(InstructionError::InternalError.into());
+    }
 
     // ensure array index is within bounds else throw ArrayIndexOutOfBoundsException
+    if index < 0 || index >= array.len() as i32 {
+        return Err(InstructionError::ArrayIndexOutOfBoundsException.into());
+    }
 
     // set the value at the index to the value popped from the stack
+    array.set(index as usize, Box::new(value)).map_err(|_| InstructionError::InternalError)?;
 
-    todo!("Implement dastore instruction");
+    Ok(())
 }
 
 fn dcmpg(thread: &mut Thread) -> Result<()> {
@@ -642,10 +823,18 @@ fn dcmpg(thread: &mut Thread) -> Result<()> {
     let value1 = thread.thread_stack.pop::<f64>().ok_or(InstructionError::InternalError)?;
 
     // compare the two double values
-
     // push the result onto the stack
+    if value1.is_nan() || value2.is_nan() {
+        thread.thread_stack.push(1);
+    } else if value1 > value2 {
+        thread.thread_stack.push(1);
+    } else if value1 == value2 {
+        thread.thread_stack.push(0);
+    } else {
+        thread.thread_stack.push(-1);
+    }
 
-    todo!("Implement dcmpg instruction");
+    Ok(())
 }
 
 fn dcmpl(thread: &mut Thread) -> Result<()> {
@@ -653,10 +842,18 @@ fn dcmpl(thread: &mut Thread) -> Result<()> {
     let value1 = thread.thread_stack.pop::<f64>().ok_or(InstructionError::InternalError)?;
 
     // compare the two double values
-
     // push the result onto the stack
+    if value1.is_nan() || value2.is_nan() {
+        thread.thread_stack.push(-1);
+    } else if value1 > value2 {
+        thread.thread_stack.push(1);
+    } else if value1 == value2 {
+        thread.thread_stack.push(0);
+    } else {
+        thread.thread_stack.push(-1);
+    }
 
-    todo!("Implement dcmpl instruction");
+    Ok(())
 }
 
 fn dconst_0(thread: &mut Thread) -> Result<()> {
@@ -676,10 +873,14 @@ fn ddiv(thread: &mut Thread) -> Result<()> {
     let value1 = thread.thread_stack.pop::<f64>().ok_or(InstructionError::InternalError)?;
 
     // divide the two double values
-
     // push the result onto the stack
+    if value2 == 0.0 {
+        return Err(InstructionError::ArithmeticException.into());
+    }
 
-    todo!("Implement ddiv instruction");
+    thread.thread_stack.push(value1 / value2);
+
+    Ok(())
 }
 
 fn dload(thread: &mut Thread) -> Result<()> {
@@ -689,44 +890,57 @@ fn dload(thread: &mut Thread) -> Result<()> {
     }).ok_or(InstructionError::InternalError)?;
 
     // ensure index is within bounds of local variable array else throw InstructionsError::InternalError
+    if index >= thread.local_vars.byte_length() as u16 {
+        return Err(InstructionError::InternalError.into());
+    }
 
     // ensure the local variable at the index is a double else throw InstructionsError::InternalError
+    let value = thread.local_vars.get::<f64>(index as usize).ok_or(InstructionError::InternalError)?;
 
     // push the double value from the local variable at the index onto the stack
+    thread.thread_stack.push(value);
 
-    todo!("Implement dload instruction");
+    Ok(())
 }
 
 fn dload_0(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 0 is a double else throw InstructionsError::InternalError
+    let value = thread.local_vars.get::<f64>(0).ok_or(InstructionError::InternalError)?;
 
     // push the double value from the local variable at index 0 onto the stack
+    thread.thread_stack.push(value);
 
-    todo!("Implement dload_0 instruction");
+    Ok(())
 }
 
 fn dload_1(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 1 is a double else throw InstructionsError::InternalError
+    let value = thread.local_vars.get::<f64>(1).ok_or(InstructionError::InternalError)?;
 
     // push the double value from the local variable at index 1 onto the stack
+    thread.thread_stack.push(value);
 
-    todo!("Implement dload_1 instruction");
+    Ok(())
 }
 
 fn dload_2(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 2 is a double else throw InstructionsError::InternalError
+    let value = thread.local_vars.get::<f64>(2).ok_or(InstructionError::InternalError)?;
 
     // push the double value from the local variable at index 2 onto the stack
+    thread.thread_stack.push(value);
 
-    todo!("Implement dload_2 instruction");
+    Ok(())
 }
 
 fn dload_3(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 3 is a double else throw InstructionsError::InternalError
+    let value = thread.local_vars.get::<f64>(3).ok_or(InstructionError::InternalError)?;
 
     // push the double value from the local variable at index 3 onto the stack
+    thread.thread_stack.push(value);
 
-    todo!("Implement dload_3 instruction");
+    Ok(())
 }
 
 fn dmul(thread: &mut Thread) -> Result<()> {
@@ -734,20 +948,20 @@ fn dmul(thread: &mut Thread) -> Result<()> {
     let value1 = thread.thread_stack.pop::<f64>().ok_or(InstructionError::InternalError)?;
 
     // multiply the two double values
-
     // push the result onto the stack
+    thread.thread_stack.push(value1 * value2);
 
-    todo!("Implement dmul instruction");
+    Ok(())
 }
 
 fn dneg(thread: &mut Thread) -> Result<()> {
     let value = thread.thread_stack.pop::<f64>().ok_or(InstructionError::InternalError)?;
 
     // negate the double value
-
     // push the result onto the stack
+    thread.thread_stack.push(-value);
 
-    todo!("Implement dneg instruction");
+    Ok(())
 }
 
 fn drem(thread: &mut Thread) -> Result<()> {
@@ -755,10 +969,14 @@ fn drem(thread: &mut Thread) -> Result<()> {
     let value1 = thread.thread_stack.pop::<f64>().ok_or(InstructionError::InternalError)?;
 
     // compute the remainder of the division of the two double values
-
     // push the result onto the stack
+    if value2 == 0.0 {
+        return Err(InstructionError::ArithmeticException.into());
+    }
 
-    todo!("Implement drem instruction");
+    thread.thread_stack.push(value1 % value2);
+
+    Ok(())
 }
 
 fn dreturn(thread: &mut Thread) -> Result<()> {
@@ -774,44 +992,62 @@ fn dstore(thread: &mut Thread) -> Result<()> {
     }).ok_or(InstructionError::InternalError)?;
 
     // ensure index is within bounds of local variable array else throw InstructionsError::InternalError
+    if index >= thread.local_vars.byte_length() as u16 {
+        return Err(InstructionError::InternalError.into());
+    }
 
     // ensure the local variable at the index is a double else throw InstructionsError::InternalError
+    thread.local_vars.get::<f64>(index as usize).ok_or(InstructionError::InternalError)?;
 
     // pop the double value from the stack and store it in the local variable at the index
+    let value = thread.thread_stack.pop::<f64>().ok_or(InstructionError::InternalError)?;
+    thread.local_vars.set(index as usize, value);
 
-    todo!("Implement dstore instruction");
+    Ok(())
 }
 
 fn dstore_0(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 0 is a double else throw InstructionsError::InternalError
+    thread.local_vars.get::<f64>(0).ok_or(InstructionError::InternalError)?;
 
     // pop the double value from the stack and store it in the local variable at index 0
+    let value = thread.thread_stack.pop::<f64>().ok_or(InstructionError::InternalError)?;
+    thread.local_vars.set(0, value);
 
-    todo!("Implement dstore_0 instruction");
+    Ok(())
 }
 
 fn dstore_1(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 1 is a double else throw InstructionsError::InternalError
+    thread.local_vars.get::<f64>(1).ok_or(InstructionError::InternalError)?;
 
     // pop the double value from the stack and store it in the local variable at index 1
+    let value = thread.thread_stack.pop::<f64>().ok_or(InstructionError::InternalError)?;
+    thread.local_vars.set(1, value);
 
-    todo!("Implement dstore_1 instruction");
+    Ok(())
 }
 
 fn dstore_2(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 2 is a double else throw InstructionsError::InternalError
+    thread.local_vars.get::<f64>(2).ok_or(InstructionError::InternalError)?;
 
     // pop the double value from the stack and store it in the local variable at index 2
+    let value = thread.thread_stack.pop::<f64>().ok_or(InstructionError::InternalError)?;
+    thread.local_vars.set(2, value);
 
-    todo!("Implement dstore_2 instruction");
+    Ok(())
 }
 
 fn dstore_3(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 3 is a double else throw InstructionsError::InternalError
+    thread.local_vars.get::<f64>(3).ok_or(InstructionError::InternalError)?;
 
     // pop the double value from the stack and store it in the local variable at index 3
+    let value = thread.thread_stack.pop::<f64>().ok_or(InstructionError::InternalError)?;
+    thread.local_vars.set(3, value);
 
-    todo!("Implement dstore_3 instruction");
+    Ok(())
 }
 
 fn dsub(thread: &mut Thread) -> Result<()> {
@@ -819,18 +1055,20 @@ fn dsub(thread: &mut Thread) -> Result<()> {
     let value1 = thread.thread_stack.pop::<f64>().ok_or(InstructionError::InternalError)?;
 
     // subtract the two double values
-
     // push the result onto the stack
+    thread.thread_stack.push(value1 - value2);
 
-    todo!("Implement dsub instruction");
+    Ok(())
 }
 
 fn dup(thread: &mut Thread) -> Result<()> {
     let value = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
 
     // push the value back onto the stack twice
+    thread.thread_stack.push(value.clone());
+    thread.thread_stack.push(value);
 
-    todo!("Implement dup instruction");
+    Ok(())
 }
 
 fn dup_x1(thread: &mut Thread) -> Result<()> {
@@ -838,8 +1076,11 @@ fn dup_x1(thread: &mut Thread) -> Result<()> {
     let value2 = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
 
     // push value1 back onto the stack, then push value2, then push value1 again
+    thread.thread_stack.push(value1.clone());
+    thread.thread_stack.push(value2);
+    thread.thread_stack.push(value1);
 
-    todo!("Implement dup_x1 instruction");
+    Ok(())
 }
 
 fn dup_x2(thread: &mut Thread) -> Result<()> {
@@ -848,8 +1089,12 @@ fn dup_x2(thread: &mut Thread) -> Result<()> {
     let value3 = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
 
     // push value1 back onto the stack, then push value3, then push value2, then push value1 again
+    thread.thread_stack.push(value1.clone());
+    thread.thread_stack.push(value3);
+    thread.thread_stack.push(value2);
+    thread.thread_stack.push(value1);
 
-    todo!("Implement dup_x2 instruction");
+    Ok(())
 }
 
 fn dup2(thread: &mut Thread) -> Result<()> {
@@ -857,8 +1102,12 @@ fn dup2(thread: &mut Thread) -> Result<()> {
     let value2 = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
 
     // push value2 back onto the stack, then push value1, then push value2 again, then push value1 again
+    thread.thread_stack.push(value2.clone());
+    thread.thread_stack.push(value1.clone());
+    thread.thread_stack.push(value2);
+    thread.thread_stack.push(value1);
 
-    todo!("Implement dup2 instruction");
+    Ok(())
 }
 
 fn dup2_x1(thread: &mut Thread) -> Result<()> {
@@ -867,8 +1116,13 @@ fn dup2_x1(thread: &mut Thread) -> Result<()> {
     let value3 = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
 
     // push value2 back onto the stack, then push value1, then push value3, then push value2 again, then push value1 again
+    thread.thread_stack.push(value2.clone());
+    thread.thread_stack.push(value1.clone());
+    thread.thread_stack.push(value3);
+    thread.thread_stack.push(value2);
+    thread.thread_stack.push(value1);
 
-    todo!("Implement dup2_x1 instruction");
+    Ok(())
 }
 
 fn dup2_x2(thread: &mut Thread) -> Result<()> {
@@ -878,38 +1132,44 @@ fn dup2_x2(thread: &mut Thread) -> Result<()> {
     let value4 = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
 
     // push value2 back onto the stack, then push value1, then push value4, then push value3, then push value2 again, then push value1 again
+    thread.thread_stack.push(value2.clone());
+    thread.thread_stack.push(value1.clone());
+    thread.thread_stack.push(value4);
+    thread.thread_stack.push(value3);
+    thread.thread_stack.push(value2);
+    thread.thread_stack.push(value1);
 
-    todo!("Implement dup2_x2 instruction");
+    Ok(())
 }
 
 fn f2d(thread: &mut Thread) -> Result<()> {
     let value = thread.thread_stack.pop::<f32>().ok_or(InstructionError::InternalError)?;
 
     // convert the float value to a double value
-
     // push the double value onto the stack
+    thread.thread_stack.push(value as f64);
 
-    todo!("Implement f2d instruction");
+    Ok(())
 }
 
 fn f2i(thread: &mut Thread) -> Result<()> {
     let value = thread.thread_stack.pop::<f32>().ok_or(InstructionError::InternalError)?;
 
     // convert the float value to an int value
-
     // push the int value onto the stack
+    thread.thread_stack.push(value as i32);
 
-    todo!("Implement f2i instruction");
+    Ok(())
 }
 
 fn f2l(thread: &mut Thread) -> Result<()> {
     let value = thread.thread_stack.pop::<f32>().ok_or(InstructionError::InternalError)?;
 
     // convert the float value to a long value
-
     // push the long value onto the stack
+    thread.thread_stack.push(value as i64);
 
-    todo!("Implement f2l instruction");
+    Ok(())
 }
 
 fn fadd(thread: &mut Thread) -> Result<()> {
@@ -917,10 +1177,10 @@ fn fadd(thread: &mut Thread) -> Result<()> {
     let value1 = thread.thread_stack.pop::<f32>().ok_or(InstructionError::InternalError)?;
 
     // add the two float values
-
     // push the result onto the stack
+    thread.thread_stack.push(value1 + value2);
 
-    todo!("Implement fadd instruction");
+    Ok(())
 }
 
 fn faload(thread: &mut Thread) -> Result<()> {
@@ -932,12 +1192,31 @@ fn faload(thread: &mut Thread) -> Result<()> {
     }
 
     // get the array referenced
+    let lock = REFERENCE_TABLE.lock().map(|r| r).map_err(|_| InstructionError::InternalError)?;
+    let array = lock.get_reference(&array_ref).ok_or(InstructionError::InternalError)?;
+
+    // ensure this is an array
+    if !array.is_array() {
+        return Err(InstructionError::InternalError.into());
+    }
+
+    let array = array.as_array().map(|a| a).ok_or(InstructionError::InternalError)?;
+
+    // ensure the array is of type float
+    if !matches!(array, AnyArrayValue::F32(_)){
+        return Err(InstructionError::InternalError.into());
+    }
 
     // ensure array index is within bounds else throw ArrayIndexOutOfBoundsException
+    if index < 0 || index >= array.len() as i32 {
+        return Err(InstructionError::ArrayIndexOutOfBoundsException.into());
+    }
 
     // push the value at the index onto the stack
+    let value: f32 = array.get(index as usize).ok_or(InstructionError::InternalError)?.downcast_ref::<f32>().ok_or(InstructionError::InternalError)?.clone();
+    thread.thread_stack.push(value);
 
-    todo!("Implement faload instruction");
+    Ok(())
 }
 
 fn fastore(thread: &mut Thread) -> Result<()> {
@@ -950,12 +1229,30 @@ fn fastore(thread: &mut Thread) -> Result<()> {
     }
 
     // get the array referenced
+    let mut lock = REFERENCE_TABLE.lock().map(|r| r).map_err(|_| InstructionError::InternalError)?;
+    let array = lock.get_mut_reference(&array_ref).ok_or(InstructionError::InternalError)?;
+
+    // ensure this is an array
+    if !array.is_array() {
+        return Err(InstructionError::InternalError.into());
+    }
+
+    let array: &mut AnyArrayValue = array.as_mut_array().ok_or(InstructionError::InternalError)?;
+
+    // ensure the array is of type float
+    if !matches!(array, AnyArrayValue::F32(_)){
+        return Err(InstructionError::InternalError.into());
+    }
 
     // ensure array index is within bounds else throw ArrayIndexOutOfBoundsException
+    if index < 0 || index >= array.len() as i32 {
+        return Err(InstructionError::ArrayIndexOutOfBoundsException.into());
+    }
 
     // set the value at the index to the value popped from the stack
+    array.set(index as usize, Box::new(value)).map_err(|_| InstructionError::InternalError)?;
 
-    todo!("Implement fastore instruction");
+    Ok(())
 }
 
 fn fcmpg(thread: &mut Thread) -> Result<()> {
@@ -963,10 +1260,18 @@ fn fcmpg(thread: &mut Thread) -> Result<()> {
     let value1 = thread.thread_stack.pop::<f32>().ok_or(InstructionError::InternalError)?;
 
     // compare the two float values
-
     // push the result onto the stack
+    if value1.is_nan() || value2.is_nan() {
+        thread.thread_stack.push(1);
+    } else if value1 > value2 {
+        thread.thread_stack.push(1);
+    } else if value1 == value2 {
+        thread.thread_stack.push(0);
+    } else {
+        thread.thread_stack.push(-1);
+    }
 
-    todo!("Implement fcmpg instruction");
+    Ok(())
 }
 
 fn fcmpl(thread: &mut Thread) -> Result<()> {
@@ -974,10 +1279,18 @@ fn fcmpl(thread: &mut Thread) -> Result<()> {
     let value1 = thread.thread_stack.pop::<f32>().ok_or(InstructionError::InternalError)?;
 
     // compare the two float values
-
     // push the result onto the stack
+    if value1.is_nan() || value2.is_nan() {
+        thread.thread_stack.push(-1);
+    } else if value1 > value2 {
+        thread.thread_stack.push(1);
+    } else if value1 == value2 {
+        thread.thread_stack.push(0);
+    } else {
+        thread.thread_stack.push(-1);
+    }
 
-    todo!("Implement fcmpl instruction");
+    Ok(())
 }
 
 fn fconst_0(thread: &mut Thread) -> Result<()> {
@@ -1003,10 +1316,10 @@ fn fdiv(thread: &mut Thread) -> Result<()> {
     let value1 = thread.thread_stack.pop::<f32>().ok_or(InstructionError::InternalError)?;
 
     // divide the two float values
-
     // push the result onto the stack
+    thread.thread_stack.push(value1 / value2);
 
-    todo!("Implement fdiv instruction");
+    Ok(())
 }
 
 fn fload(thread: &mut Thread) -> Result<()> {
@@ -1016,44 +1329,57 @@ fn fload(thread: &mut Thread) -> Result<()> {
     }).ok_or(InstructionError::InternalError)?;
 
     // ensure index is within bounds of local variable array else throw InstructionsError::InternalError
+    if index >= thread.local_vars.byte_length() as u16 {
+        return Err(InstructionError::InternalError.into());
+    }
 
     // ensure the local variable at the index is a float else throw InstructionsError::InternalError
+    let value = thread.local_vars.get::<f32>(index as usize).ok_or(InstructionError::InternalError)?;
 
     // push the float value from the local variable at the index onto the stack
+    thread.thread_stack.push(value);
 
-    todo!("Implement fload instruction");
+    Ok(())
 }
 
 fn fload_0(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 0 is a float else throw InstructionsError::InternalError
+    let value = thread.local_vars.get::<f32>(0).ok_or(InstructionError::InternalError)?;
 
     // push the float value from the local variable at index 0 onto the stack
+    thread.thread_stack.push(value);
 
-    todo!("Implement fload_0 instruction");
+    Ok(())
 }
 
 fn fload_1(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 1 is a float else throw InstructionsError::InternalError
+    let value = thread.local_vars.get::<f32>(1).ok_or(InstructionError::InternalError)?;
 
     // push the float value from the local variable at index 1 onto the stack
+    thread.thread_stack.push(value);
 
-    todo!("Implement fload_1 instruction");
+    Ok(())
 }
 
 fn fload_2(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 2 is a float else throw InstructionsError::InternalError
+    let value = thread.local_vars.get::<f32>(2).ok_or(InstructionError::InternalError)?;
 
     // push the float value from the local variable at index 2 onto the stack
+    thread.thread_stack.push(value);
 
-    todo!("Implement fload_2 instruction");
+    Ok(())
 }
 
 fn fload_3(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 3 is a float else throw InstructionsError::InternalError
+    let value = thread.local_vars.get::<f32>(3).ok_or(InstructionError::InternalError)?;
 
     // push the float value from the local variable at index 3 onto the stack
+    thread.thread_stack.push(value);
 
-    todo!("Implement fload_3 instruction");
+    Ok(())
 }
 
 fn fmul(thread: &mut Thread) -> Result<()> {
@@ -1061,20 +1387,20 @@ fn fmul(thread: &mut Thread) -> Result<()> {
     let value1 = thread.thread_stack.pop::<f32>().ok_or(InstructionError::InternalError)?;
 
     // multiply the two float values
-
     // push the result onto the stack
+    thread.thread_stack.push(value1 * value2);
 
-    todo!("Implement fmul instruction");
+    Ok(())
 }
 
 fn fneg(thread: &mut Thread) -> Result<()> {
     let value = thread.thread_stack.pop::<f32>().ok_or(InstructionError::InternalError)?;
 
     // negate the float value
-
     // push the result onto the stack
+    thread.thread_stack.push(-value);
 
-    todo!("Implement fneg instruction");
+    Ok(())
 }
 
 fn frem(thread: &mut Thread) -> Result<()> {
@@ -1082,10 +1408,14 @@ fn frem(thread: &mut Thread) -> Result<()> {
     let value1 = thread.thread_stack.pop::<f32>().ok_or(InstructionError::InternalError)?;
 
     // compute the remainder of the division of the two float values
-
     // push the result onto the stack
+    if value2 == 0.0 {
+        return Err(InstructionError::ArithmeticException.into());
+    }
 
-    todo!("Implement frem instruction");
+    thread.thread_stack.push(value1 % value2);
+
+    Ok(())
 }
 
 fn freturn(thread: &mut Thread) -> Result<()> {
@@ -1101,44 +1431,62 @@ fn fstore(thread: &mut Thread) -> Result<()> {
     }).ok_or(InstructionError::InternalError)?;
 
     // ensure index is within bounds of local variable array else throw InstructionsError::InternalError
+    if index >= thread.local_vars.byte_length() as u16 {
+        return Err(InstructionError::InternalError.into());
+    }
 
     // ensure the local variable at the index is a float else throw InstructionsError::InternalError
+    thread.local_vars.get::<f32>(index as usize).ok_or(InstructionError::InternalError)?;
 
     // pop the float value from the stack and store it in the local variable at the index
+    let value = thread.thread_stack.pop::<f32>().ok_or(InstructionError::InternalError)?;
+    thread.local_vars.set(index as usize, value);
 
-    todo!("Implement fstore instruction");
+    Ok(())
 }
 
 fn fstore_0(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 0 is a float else throw InstructionsError::InternalError
+    thread.local_vars.get::<f32>(0).ok_or(InstructionError::InternalError)?;
 
     // pop the float value from the stack and store it in the local variable at index 0
+    let value = thread.thread_stack.pop::<f32>().ok_or(InstructionError::InternalError)?;
+    thread.local_vars.set(0, value);
 
-    todo!("Implement fstore_0 instruction");
+    Ok(())
 }
 
 fn fstore_1(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 1 is a float else throw InstructionsError::InternalError
+    thread.local_vars.get::<f32>(1).ok_or(InstructionError::InternalError)?;
 
     // pop the float value from the stack and store it in the local variable at index 1
+    let value = thread.thread_stack.pop::<f32>().ok_or(InstructionError::InternalError)?;
+    thread.local_vars.set(1, value);
 
-    todo!("Implement fstore_1 instruction");
+    Ok(())
 }
 
 fn fstore_2(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 2 is a float else throw InstructionsError::InternalError
+    thread.local_vars.get::<f32>(2).ok_or(InstructionError::InternalError)?;
 
     // pop the float value from the stack and store it in the local variable at index 2
+    let value = thread.thread_stack.pop::<f32>().ok_or(InstructionError::InternalError)?;
+    thread.local_vars.set(2, value);
 
-    todo!("Implement fstore_2 instruction");
+    Ok(())
 }
 
 fn fstore_3(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 3 is a float else throw InstructionsError::InternalError
+    thread.local_vars.get::<f32>(3).ok_or(InstructionError::InternalError)?;
 
     // pop the float value from the stack and store it in the local variable at index 3
+    let value = thread.thread_stack.pop::<f32>().ok_or(InstructionError::InternalError)?;
+    thread.local_vars.set(3, value);
 
-    todo!("Implement fstore_3 instruction");
+    Ok(())
 }
 
 fn fsub(thread: &mut Thread) -> Result<()> {
@@ -1146,10 +1494,10 @@ fn fsub(thread: &mut Thread) -> Result<()> {
     let value1 = thread.thread_stack.pop::<f32>().ok_or(InstructionError::InternalError)?;
 
     // subtract the two float values
-
     // push the result onto the stack
+    thread.thread_stack.push(value1 - value2);
 
-    todo!("Implement fsub instruction");
+    Ok(())
 }
 
 fn getfield(thread: &mut Thread) -> Result<()> {
@@ -1186,76 +1534,78 @@ fn goto(thread: &mut Thread) -> Result<()> {
     let offset = thread.read_short_from_pc().ok_or(InstructionError::InternalError)? as i16;
 
     // jump to the instruction at the offset from the current instruction
+    thread.pc = offset as usize;
 
-    todo!("Implement goto instruction");
+    Ok(())
 }
 
 fn goto_w(thread: &mut Thread) -> Result<()> {
     let offset = thread.read_int_from_pc().ok_or(InstructionError::InternalError)? as i32;
 
     // jump to the instruction at the offset from the current instruction
+    thread.pc = offset as usize;
 
-    todo!("Implement goto_w instruction");
+    Ok(())
 }
 
 fn i2b(thread: &mut Thread) -> Result<()> {
     let value = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // convert the int value to a byte value
-
     // push the byte value onto the stack
+    thread.thread_stack.push((value as i8) as i32);
 
-    todo!("Implement i2b instruction");
+    Ok(())
 }
 
 fn i2c(thread: &mut Thread) -> Result<()> {
     let value = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // convert the int value to a char value
-
     // push the char value onto the stack
+    thread.thread_stack.push((value as u16) as i32);
 
-    todo!("Implement i2c instruction");
+    Ok(())
 }
 
 fn i2d(thread: &mut Thread) -> Result<()> {
     let value = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // convert the int value to a double value
-
     // push the double value onto the stack
+    thread.thread_stack.push(value as f64);
 
-    todo!("Implement i2d instruction");
+    Ok(())
 }
 
 fn i2f(thread: &mut Thread) -> Result<()> {
     let value = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // convert the int value to a float value
-
     // push the float value onto the stack
+    thread.thread_stack.push(value as f32);
 
-    todo!("Implement i2f instruction");
+    Ok(())
 }
 
 fn i2l(thread: &mut Thread) -> Result<()> {
     let value = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // convert the int value to a long value
-
     // push the long value onto the stack
+    thread.thread_stack.push(value as i64);
 
-    todo!("Implement i2l instruction");
+    Ok(())
 }
 
 fn i2s(thread: &mut Thread) -> Result<()> {
     let value = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // convert the int value to a short value
-
     // push the short value onto the stack
+    thread.thread_stack.push((value as i16) as i32);
 
-    todo!("Implement i2s instruction");
+    Ok(())
 }
 
 fn iadd(thread: &mut Thread) -> Result<()> {
@@ -1263,10 +1613,10 @@ fn iadd(thread: &mut Thread) -> Result<()> {
     let value1 = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // add the two int values
-
     // push the result onto the stack
+    thread.thread_stack.push(value1.wrapping_add(value2));
 
-    todo!("Implement iadd instruction");
+    Ok(())
 }
 
 fn iaload(thread: &mut Thread) -> Result<()> {
@@ -1278,12 +1628,31 @@ fn iaload(thread: &mut Thread) -> Result<()> {
     }
 
     // get the array referenced
+    let lock = REFERENCE_TABLE.lock().map(|r| r).map_err(|_| InstructionError::InternalError)?;
+    let array = lock.get_reference(&array_ref).ok_or(InstructionError::InternalError)?;
+
+    // ensure this is an array
+    if !array.is_array() {
+        return Err(InstructionError::InternalError.into());
+    }
+
+    let array = array.as_array().map(|a| a).ok_or(InstructionError::InternalError)?;
+
+    // ensure the array is of type int
+    if !matches!(array, AnyArrayValue::I32(_)){
+        return Err(InstructionError::InternalError.into());
+    }
 
     // ensure array index is within bounds else throw ArrayIndexOutOfBoundsException
+    if index < 0 || index >= array.len() as i32 {
+        return Err(InstructionError::ArrayIndexOutOfBoundsException.into());
+    }
 
     // push the value at the index onto the stack
+    let value: i32 = array.get(index as usize).ok_or(InstructionError::InternalError)?.downcast_ref::<i32>().ok_or(InstructionError::InternalError)?.clone();
+    thread.thread_stack.push(value);
 
-    todo!("Implement iaload instruction");
+    Ok(())
 }
 
 fn iand(thread: &mut Thread) -> Result<()> {
@@ -1291,10 +1660,10 @@ fn iand(thread: &mut Thread) -> Result<()> {
     let value1 = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // perform a bitwise AND operation on the two int values
-
     // push the result onto the stack
+    thread.thread_stack.push(value1 & value2);
 
-    todo!("Implement iand instruction");
+    Ok(())
 }
 
 fn iastore(thread: &mut Thread) -> Result<()> {
@@ -1307,12 +1676,30 @@ fn iastore(thread: &mut Thread) -> Result<()> {
     }
 
     // get the array referenced
+    let mut lock = REFERENCE_TABLE.lock().map(|r| r).map_err(|_| InstructionError::InternalError)?;
+    let array = lock.get_mut_reference(&array_ref).ok_or(InstructionError::InternalError)?;
+
+    // ensure this is an array
+    if !array.is_array() {
+        return Err(InstructionError::InternalError.into());
+    }
+
+    let array: &mut AnyArrayValue = array.as_mut_array().ok_or(InstructionError::InternalError)?;
+
+    // ensure the array is of type int
+    if !matches!(array, AnyArrayValue::I32(_)){
+        return Err(InstructionError::InternalError.into());
+    }
 
     // ensure array index is within bounds else throw ArrayIndexOutOfBoundsException
+    if index < 0 || index >= array.len() as i32 {
+        return Err(InstructionError::ArrayIndexOutOfBoundsException.into());
+    }
 
     // set the value at the index to the value popped from the stack
+    array.set(index as usize, Box::new(value)).map_err(|_| InstructionError::InternalError)?;
 
-    todo!("Implement iastore instruction");
+    Ok(())
 }
 
 fn iconst_m1(thread: &mut Thread) -> Result<()> {
@@ -1366,10 +1753,10 @@ fn idiv(thread: &mut Thread) -> Result<()> {
     }
 
     // divide the two int values
-
     // push the result onto the stack
+    thread.thread_stack.push(value1 / value2);
 
-    todo!("Implement idiv instruction");
+    Ok(())
 }
 
 fn if_acmpeq(thread: &mut Thread) -> Result<()> {
@@ -1378,8 +1765,11 @@ fn if_acmpeq(thread: &mut Thread) -> Result<()> {
     let value1 = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
 
     // if the two object references are equal, jump to the instruction at the offset from the current instruction
+    if value1 == value2 {
+        thread.pc = thread.pc + (offset as usize) - 3; // subtract 3 for the opcode and the two bytes of the offset
+    }
 
-    todo!("Implement if_acmpeq instruction");
+    Ok(())
 }
 
 fn if_acmpne(thread: &mut Thread) -> Result<()> {
@@ -1388,8 +1778,11 @@ fn if_acmpne(thread: &mut Thread) -> Result<()> {
     let value1 = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
 
     // if the two object references are not equal, jump to the instruction at the offset from the current instruction
+    if value1 != value2 {
+        thread.pc = thread.pc + (offset as usize) - 3; // subtract 3 for the opcode and the two bytes of the offset
+    }
 
-    todo!("Implement if_acmpne instruction");
+    Ok(())
 }
 
 fn if_icmpeq(thread: &mut Thread) -> Result<()> {
@@ -1398,8 +1791,11 @@ fn if_icmpeq(thread: &mut Thread) -> Result<()> {
     let value1 = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // if the two int values are equal, jump to the instruction at the offset from the current instruction
+    if value1 == value2 {
+        thread.pc = thread.pc + (offset as usize) - 3; // subtract 3 for the opcode and the two bytes of the offset
+    }
 
-    todo!("Implement if_icmpeq instruction");
+    Ok(())
 }
 
 fn if_icmpne(thread: &mut Thread) -> Result<()> {
@@ -1408,8 +1804,11 @@ fn if_icmpne(thread: &mut Thread) -> Result<()> {
     let value1 = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // if the two int values are not equal, jump to the instruction at the offset from the current instruction
+    if value1 != value2 {
+        thread.pc = thread.pc + (offset as usize) - 3; // subtract 3 for the opcode and the two bytes of the offset
+    }
 
-    todo!("Implement if_icmpne instruction");
+    Ok(())
 }
 
 fn if_icmplt(thread: &mut Thread) -> Result<()> {
@@ -1418,8 +1817,11 @@ fn if_icmplt(thread: &mut Thread) -> Result<()> {
     let value1 = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // if value1 is less than value2, jump to the instruction at the offset from the current instruction
+    if value1 < value2 {
+        thread.pc = thread.pc + (offset as usize) - 3; // subtract 3 for the opcode and the two bytes of the offset
+    }
 
-    todo!("Implement if_icmplt instruction");
+    Ok(())
 }
 
 fn if_icmpge(thread: &mut Thread) -> Result<()> {
@@ -1428,8 +1830,11 @@ fn if_icmpge(thread: &mut Thread) -> Result<()> {
     let value1 = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // if value1 is greater than or equal to value2, jump to the instruction at the offset from the current instruction
+    if value1 >= value2 {
+        thread.pc = thread.pc + (offset as usize) - 3; // subtract 3 for the opcode and the two bytes of the offset
+    }
 
-    todo!("Implement if_icmpge instruction");
+    Ok(())
 }
 
 fn if_icmpgt(thread: &mut Thread) -> Result<()> {
@@ -1438,8 +1843,11 @@ fn if_icmpgt(thread: &mut Thread) -> Result<()> {
     let value1 = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // if value1 is greater than value2, jump to the instruction at the offset from the current instruction
+    if value1 > value2 {
+        thread.pc = thread.pc + (offset as usize) - 3; // subtract 3 for the opcode and the two bytes of the offset
+    }
 
-    todo!("Implement if_icmpgt instruction");
+    Ok(())
 }
 
 fn if_icmple(thread: &mut Thread) -> Result<()> {
@@ -1448,8 +1856,11 @@ fn if_icmple(thread: &mut Thread) -> Result<()> {
     let value1 = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // if value1 is less than or equal to value2, jump to the instruction at the offset from the current instruction
+    if value1 <= value2 {
+        thread.pc = thread.pc + (offset as usize) - 3; // subtract 3 for the opcode and the two bytes of the offset
+    }
 
-    todo!("Implement if_icmple instruction");
+    Ok(())
 }
 
 fn ifeq(thread: &mut Thread) -> Result<()> {
@@ -1457,8 +1868,11 @@ fn ifeq(thread: &mut Thread) -> Result<()> {
     let value = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // if the int value is equal to 0, jump to the instruction at the offset from the current instruction
+    if value == 0 {
+        thread.pc = thread.pc + (offset as usize) - 3; // subtract 3 for the opcode and the two bytes of the offset
+    }
 
-    todo!("Implement ifeq instruction");
+    Ok(())
 }
 
 fn ifne(thread: &mut Thread) -> Result<()> {
@@ -1466,8 +1880,11 @@ fn ifne(thread: &mut Thread) -> Result<()> {
     let value = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // if the int value is not equal to 0, jump to the instruction at the offset from the current instruction
+    if value != 0 {
+        thread.pc = thread.pc + (offset as usize) - 3; // subtract 3 for the opcode and the two bytes of the offset
+    }
 
-    todo!("Implement ifne instruction");
+    Ok(())
 }
 
 fn iflt(thread: &mut Thread) -> Result<()> {
@@ -1475,8 +1892,11 @@ fn iflt(thread: &mut Thread) -> Result<()> {
     let value = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // if the int value is less than 0, jump to the instruction at the offset from the current instruction
+    if value < 0 {
+        thread.pc = thread.pc + (offset as usize) - 3; // subtract 3 for the opcode and the two bytes of the offset
+    }
 
-    todo!("Implement iflt instruction");
+    Ok(())
 }
 
 fn ifge(thread: &mut Thread) -> Result<()> {
@@ -1484,8 +1904,11 @@ fn ifge(thread: &mut Thread) -> Result<()> {
     let value = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // if the int value is greater than or equal to 0, jump to the instruction at the offset from the current instruction
+    if value >= 0 {
+        thread.pc = thread.pc + (offset as usize) - 3; // subtract 3 for the opcode and the two bytes of the offset
+    }
 
-    todo!("Implement ifge instruction");
+    Ok(())
 }
 
 fn ifgt(thread: &mut Thread) -> Result<()> {
@@ -1493,8 +1916,11 @@ fn ifgt(thread: &mut Thread) -> Result<()> {
     let value = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // if the int value is greater than 0, jump to the instruction at the offset from the current instruction
+    if value > 0 {
+        thread.pc = thread.pc + (offset as usize) - 3; // subtract 3 for the opcode and the two bytes of the offset
+    }
 
-    todo!("Implement ifgt instruction");
+    Ok(())
 }
 
 fn ifle(thread: &mut Thread) -> Result<()> {
@@ -1502,8 +1928,11 @@ fn ifle(thread: &mut Thread) -> Result<()> {
     let value = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // if the int value is less than or equal to 0, jump to the instruction at the offset from the current instruction
+    if value <= 0 {
+        thread.pc = thread.pc + (offset as usize) - 3; // subtract 3 for the opcode and the two bytes of the offset
+    }
 
-    todo!("Implement ifle instruction");
+    Ok(())
 }
 
 fn ifnonnull(thread: &mut Thread) -> Result<()> {
@@ -1511,8 +1940,11 @@ fn ifnonnull(thread: &mut Thread) -> Result<()> {
     let value = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
 
     // if the object reference is not null, jump to the instruction at the offset from the current instruction
+    if value.is_not_null() {
+        thread.pc = thread.pc + (offset as usize) - 3; // subtract 3 for the opcode and the two bytes of the offset
+    }
 
-    todo!("Implement ifnonnull instruction");
+    Ok(())
 }
 
 fn ifnull(thread: &mut Thread) -> Result<()> {
@@ -1520,8 +1952,11 @@ fn ifnull(thread: &mut Thread) -> Result<()> {
     let value = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
 
     // if the object reference is null, jump to the instruction at the offset from the current instruction
+    if value.is_null() {
+        thread.pc = thread.pc + (offset as usize) - 3; // subtract 3 for the opcode and the two bytes of the offset
+    }
 
-    todo!("Implement ifnull instruction");
+    Ok(())
 }
 
 fn iinc(thread: &mut Thread) -> Result<()> {
@@ -1529,12 +1964,18 @@ fn iinc(thread: &mut Thread) -> Result<()> {
     let constant = thread.read_byte_from_pc().ok_or(InstructionError::InternalError)? as i8;
 
     // ensure index is within bounds of local variable array else throw InstructionsError::InternalError
+    if index >= thread.local_vars.byte_length() as u16 {
+        return Err(InstructionError::InternalError.into());
+    }
 
     // ensure the local variable at the index is an int else throw InstructionsError::InternalError
+    let value = thread.local_vars.get::<i32>(index as usize).ok_or(InstructionError::InternalError)?;
 
     // increment the int value in the local variable at the index by the constant
+    let new_value = value.wrapping_add(constant as i32);
+    thread.local_vars.set(index as usize, new_value);
 
-    todo!("Implement iinc instruction");
+    Ok(())
 }
 
 fn iload(thread: &mut Thread) -> Result<()> {
@@ -1544,44 +1985,57 @@ fn iload(thread: &mut Thread) -> Result<()> {
     }).ok_or(InstructionError::InternalError)?;
 
     // ensure index is within bounds of local variable array else throw InstructionsError::InternalError
+    if index >= thread.local_vars.byte_length() as u16 {
+        return Err(InstructionError::InternalError.into());
+    }
 
     // ensure the local variable at the index is an int else throw InstructionsError::InternalError
+    let value = thread.local_vars.get::<i32>(index as usize).ok_or(InstructionError::InternalError)?;
 
     // push the int value from the local variable at the index onto the stack
+    thread.thread_stack.push(value);
 
-    todo!("Implement iload instruction");
+    Ok(())
 }
 
 fn iload_0(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 0 is an int else throw InstructionsError::InternalError
+    let value = thread.local_vars.get::<i32>(0).ok_or(InstructionError::InternalError)?;
 
     // push the int value from the local variable at index 0 onto the stack
+    thread.thread_stack.push(value);
 
-    todo!("Implement iload_0 instruction");
+    Ok(())
 }
 
 fn iload_1(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 1 is an int else throw InstructionsError::InternalError
+    let value = thread.local_vars.get::<i32>(1).ok_or(InstructionError::InternalError)?;
 
     // push the int value from the local variable at index 1 onto the stack
+    thread.thread_stack.push(value);
 
-    todo!("Implement iload_1 instruction");
+    Ok(())
 }
 
 fn iload_2(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 2 is an int else throw InstructionsError::InternalError
+    let value = thread.local_vars.get::<i32>(2).ok_or(InstructionError::InternalError)?;
 
     // push the int value from the local variable at index 2 onto the stack
+    thread.thread_stack.push(value);
 
-    todo!("Implement iload_2 instruction");
+    Ok(())
 }
 
 fn iload_3(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 3 is an int else throw InstructionsError::InternalError
+    let value = thread.local_vars.get::<i32>(3).ok_or(InstructionError::InternalError)?;
 
     // push the int value from the local variable at index 3 onto the stack
+    thread.thread_stack.push(value);
 
-    todo!("Implement iload_3 instruction");
+    Ok(())
 }
 
 fn imul(thread: &mut Thread) -> Result<()> {
@@ -1589,20 +2043,20 @@ fn imul(thread: &mut Thread) -> Result<()> {
     let value1 = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // multiply the two int values
-
     // push the result onto the stack
+    thread.thread_stack.push(value1.wrapping_mul(value2));
 
-    todo!("Implement imul instruction");
+    Ok(())
 }
 
 fn ineg(thread: &mut Thread) -> Result<()> {
     let value = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // negate the int value
-
     // push the result onto the stack
+    thread.thread_stack.push(value.wrapping_neg());
 
-    todo!("Implement ineg instruction");
+    Ok(())
 }
 
 fn instanceof(thread: &mut Thread) -> Result<()> {
@@ -1693,10 +2147,10 @@ fn ior(thread: &mut Thread) -> Result<()> {
     let value1 = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // perform a bitwise OR operation on the two int values
-
     // push the result onto the stack
+    thread.thread_stack.push(value1 | value2);
 
-    todo!("Implement ior instruction");
+    Ok(())
 }
 
 fn irem(thread: &mut Thread) -> Result<()> {
@@ -1708,10 +2162,10 @@ fn irem(thread: &mut Thread) -> Result<()> {
     }
 
     // compute the remainder of the division of the two int values
-
     // push the result onto the stack
+    thread.thread_stack.push(value1 % value2);
 
-    todo!("Implement irem instruction");
+    Ok(())
 }
 
 fn ireturn(thread: &mut Thread) -> Result<()> {
@@ -1725,10 +2179,10 @@ fn ishl(thread: &mut Thread) -> Result<()> {
     let value1 = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // shift the first int value to the left by the number of bits specified by the second int value
-
     // push the result onto the stack
+    thread.thread_stack.push(value1.wrapping_shl(value2 as u32));
 
-    todo!("Implement ishl instruction");
+    Ok(())
 }
 
 fn ishr(thread: &mut Thread) -> Result<()> {
@@ -1736,10 +2190,10 @@ fn ishr(thread: &mut Thread) -> Result<()> {
     let value1 = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // shift the first int value to the right by the number of bits specified by the second int value, using sign extension
-
     // push the result onto the stack
+    thread.thread_stack.push(value1.wrapping_shr(value2 as u32));
 
-    todo!("Implement ishr instruction");
+    Ok(())
 }
 
 fn istore(thread: &mut Thread) -> Result<()> {
@@ -1749,44 +2203,62 @@ fn istore(thread: &mut Thread) -> Result<()> {
     }).ok_or(InstructionError::InternalError)?;
 
     // ensure index is within bounds of local variable array else throw InstructionsError::InternalError
+    if index >= thread.local_vars.byte_length() as u16 {
+        return Err(InstructionError::InternalError.into());
+    }
 
     // ensure the local variable at the index is an int else throw InstructionsError::InternalError
+    thread.local_vars.get::<i32>(index as usize).ok_or(InstructionError::InternalError)?;
 
     // pop the int value from the stack and store it in the local variable at the index
+    let value = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
+    thread.local_vars.set(index as usize, value);
 
-    todo!("Implement istore instruction");
+    Ok(())
 }
 
 fn istore_0(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 0 is an int else throw InstructionsError::InternalError
+    thread.local_vars.get::<i32>(0).ok_or(InstructionError::InternalError)?;
 
     // pop the int value from the stack and store it in the local variable at index 0
+    let value = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
+    thread.local_vars.set(0, value);
 
-    todo!("Implement istore_0 instruction");
+    Ok(())
 }
 
 fn istore_1(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 1 is an int else throw InstructionsError::InternalError
+    thread.local_vars.get::<i32>(1).ok_or(InstructionError::InternalError)?;
 
     // pop the int value from the stack and store it in the local variable at index 1
+    let value = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
+    thread.local_vars.set(1, value);
 
-    todo!("Implement istore_1 instruction");
+    Ok(())
 }
 
 fn istore_2(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 2 is an int else throw InstructionsError::InternalError
+    thread.local_vars.get::<i32>(2).ok_or(InstructionError::InternalError)?;
 
     // pop the int value from the stack and store it in the local variable at index 2
+    let value = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
+    thread.local_vars.set(2, value);
 
-    todo!("Implement istore_2 instruction");
+    Ok(())
 }
 
 fn istore_3(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 3 is an int else throw InstructionsError::InternalError
+    thread.local_vars.get::<i32>(3).ok_or(InstructionError::InternalError)?;
 
     // pop the int value from the stack and store it in the local variable at index 3
+    let value = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
+    thread.local_vars.set(3, value);
 
-    todo!("Implement istore_3 instruction");
+    Ok(())
 }
 
 fn isub(thread: &mut Thread) -> Result<()> {
@@ -1794,10 +2266,10 @@ fn isub(thread: &mut Thread) -> Result<()> {
     let value1 = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // subtract the two int values
-
     // push the result onto the stack
+    thread.thread_stack.push(value1.wrapping_sub(value2));
 
-    todo!("Implement isub instruction");
+    Ok(())
 }
 
 fn iushr(thread: &mut Thread) -> Result<()> {
@@ -1805,10 +2277,10 @@ fn iushr(thread: &mut Thread) -> Result<()> {
     let value1 = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // shift the first int value to the right by the number of bits specified by the second int value, using zero extension
-
     // push the result onto the stack
+    thread.thread_stack.push(((value1 as u32) >> value2) as i32);
 
-    todo!("Implement iushr instruction");
+    Ok(())
 }
 
 fn ixor(thread: &mut Thread) -> Result<()> {
@@ -1816,60 +2288,64 @@ fn ixor(thread: &mut Thread) -> Result<()> {
     let value1 = thread.thread_stack.pop::<i32>().ok_or(InstructionError::InternalError)?;
 
     // perform a bitwise XOR operation on the two int values
-
     // push the result onto the stack
+    thread.thread_stack.push(value1 ^ value2);
 
-    todo!("Implement ixor instruction");
+    Ok(())
 }
 
 fn jsr(thread: &mut Thread) -> Result<()> {
     let offset = thread.read_short_from_pc().ok_or(InstructionError::InternalError)? as i16;
 
     // push the address of the next instruction onto the stack
+    thread.thread_stack.push::<i32>(thread.pc as i32);
 
     // jump to the instruction at the offset from the current instruction
+    thread.pc = offset as usize;
 
-    todo!("Implement jsr instruction");
+    Ok(())
 }
 
 fn jsr_w(thread: &mut Thread) -> Result<()> {
     let offset = thread.read_int_from_pc().ok_or(InstructionError::InternalError)? as i32;
 
     // push the address of the next instruction onto the stack
+    thread.thread_stack.push::<i32>(thread.pc as i32);
 
     // jump to the instruction at the offset from the current instruction
+    thread.pc = offset as usize;
 
-    todo!("Implement jsr_w instruction");
+    Ok(())
 }
 
 fn l2d(thread: &mut Thread) -> Result<()> {
     let value = thread.thread_stack.pop::<i64>().ok_or(InstructionError::InternalError)?;
 
     // convert the long value to a double value
-
     // push the double value onto the stack
+    thread.thread_stack.push(value as f64);
 
-    todo!("Implement l2d instruction");
+    Ok(())
 }
 
 fn l2f(thread: &mut Thread) -> Result<()> {
     let value = thread.thread_stack.pop::<i64>().ok_or(InstructionError::InternalError)?;
 
     // convert the long value to a float value
-
     // push the float value onto the stack
+    thread.thread_stack.push(value as f32);
 
-    todo!("Implement l2f instruction");
+    Ok(())
 }
 
 fn l2i(thread: &mut Thread) -> Result<()> {
     let value = thread.thread_stack.pop::<i64>().ok_or(InstructionError::InternalError)?;
 
     // convert the long value to an int value
-
     // push the int value onto the stack
+    thread.thread_stack.push(value as i32);
 
-    todo!("Implement l2i instruction");
+    Ok(())
 }
 
 fn ladd(thread: &mut Thread) -> Result<()> {
@@ -1877,10 +2353,10 @@ fn ladd(thread: &mut Thread) -> Result<()> {
     let value1 = thread.thread_stack.pop::<i64>().ok_or(InstructionError::InternalError)?;
 
     // add the two long values
-
     // push the result onto the stack
+    thread.thread_stack.push(value1.wrapping_add(value2));
 
-    todo!("Implement ladd instruction");
+    Ok(())
 }
 
 fn laload(thread: &mut Thread) -> Result<()> {
@@ -1892,12 +2368,31 @@ fn laload(thread: &mut Thread) -> Result<()> {
     }
 
     // get the array referenced
+    let lock = REFERENCE_TABLE.lock().map(|r| r).map_err(|_| InstructionError::InternalError)?;
+    let array = lock.get_reference(&array_ref).ok_or(InstructionError::InternalError)?;
+
+    // ensure this is an array
+    if !array.is_array() {
+        return Err(InstructionError::InternalError.into());
+    }
+
+    let array = array.as_array().map(|a| a).ok_or(InstructionError::InternalError)?;
+
+    // ensure the array is of type long
+    if !matches!(array, AnyArrayValue::I64(_)){
+        return Err(InstructionError::InternalError.into());
+    }
 
     // ensure array index is within bounds else throw ArrayIndexOutOfBoundsException
+    if index < 0 || index >= array.len() as i32 {
+        return Err(InstructionError::ArrayIndexOutOfBoundsException.into());
+    }
 
     // push the value at the index onto the stack
+    let value: i64 = array.get(index as usize).ok_or(InstructionError::InternalError)?.downcast_ref::<i64>().ok_or(InstructionError::InternalError)?.clone();
+    thread.thread_stack.push(value);
 
-    todo!("Implement laload instruction");
+    Ok(())
 }
 
 fn land(thread: &mut Thread) -> Result<()> {
@@ -1905,10 +2400,10 @@ fn land(thread: &mut Thread) -> Result<()> {
     let value1 = thread.thread_stack.pop::<i64>().ok_or(InstructionError::InternalError)?;
 
     // perform a bitwise AND operation on the two long values
-
     // push the result onto the stack
+    thread.thread_stack.push(value1 & value2);
 
-    todo!("Implement land instruction");
+    Ok(())
 }
 
 fn lastore(thread: &mut Thread) -> Result<()> {
@@ -1921,12 +2416,30 @@ fn lastore(thread: &mut Thread) -> Result<()> {
     }
 
     // get the array referenced
+    let mut lock = REFERENCE_TABLE.lock().map(|r| r).map_err(|_| InstructionError::InternalError)?;
+    let array = lock.get_mut_reference(&array_ref).ok_or(InstructionError::InternalError)?;
+
+    // ensure this is an array
+    if !array.is_array() {
+        return Err(InstructionError::InternalError.into());
+    }
+
+    let array: &mut AnyArrayValue = array.as_mut_array().ok_or(InstructionError::InternalError)?;
+
+    // ensure the array is of type long
+    if !matches!(array, AnyArrayValue::I64(_)){
+        return Err(InstructionError::InternalError.into());
+    }
 
     // ensure array index is within bounds else throw ArrayIndexOutOfBoundsException
+    if index < 0 || index >= array.len() as i32 {
+        return Err(InstructionError::ArrayIndexOutOfBoundsException.into());
+    }
 
     // set the value at the index to the value popped from the stack
+    array.set(index as usize, Box::new(value)).map_err(|_| InstructionError::InternalError)?;
 
-    todo!("Implement lastore instruction");
+    Ok(())
 }
 
 fn lcmp(thread: &mut Thread) -> Result<()> {
@@ -1934,10 +2447,16 @@ fn lcmp(thread: &mut Thread) -> Result<()> {
     let value1 = thread.thread_stack.pop::<i64>().ok_or(InstructionError::InternalError)?;
 
     // compare the two long values
-
     // push 0 onto the stack if the values are equal, 1 if value1 is greater than value2, and -1 if value1 is less than value2
+    if value1 == value2 {
+        thread.thread_stack.push(0);
+    } else if value1 > value2 {
+        thread.thread_stack.push(1);
+    } else {
+        thread.thread_stack.push(-1);
+    }
 
-    todo!("Implement lcmp instruction");
+    Ok(())
 }
 
 fn lconst_0(thread: &mut Thread) -> Result<()> {
@@ -1997,10 +2516,10 @@ fn ldiv(thread: &mut Thread) -> Result<()> {
     }
 
     // divide the two long values
-
     // push the result onto the stack
+    thread.thread_stack.push(value1 / value2);
 
-    todo!("Implement ldiv instruction");
+    Ok(())
 }
 
 fn lload(thread: &mut Thread) -> Result<()> {
@@ -2010,44 +2529,57 @@ fn lload(thread: &mut Thread) -> Result<()> {
     }).ok_or(InstructionError::InternalError)?;
 
     // ensure index is within bounds of local variable array else throw InstructionsError::InternalError
+    if index >= thread.local_vars.byte_length() as u16 {
+        return Err(InstructionError::InternalError.into());
+    }
 
     // ensure the local variable at the index is a long else throw InstructionsError::InternalError
+    let value = thread.local_vars.get::<i64>(index as usize).ok_or(InstructionError::InternalError)?;
 
     // push the long value from the local variable at the index onto the stack
+    thread.thread_stack.push(value);
 
-    todo!("Implement lload instruction");
+    Ok(())
 }
 
 fn lload_0(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 0 is a long else throw InstructionsError::InternalError
+    let value = thread.local_vars.get::<i64>(0).ok_or(InstructionError::InternalError)?;
 
     // push the long value from the local variable at index 0 onto the stack
+    thread.thread_stack.push(value);
 
-    todo!("Implement lload_0 instruction");
+    Ok(())
 }
 
 fn lload_1(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 1 is a long else throw InstructionsError::InternalError
+    let value = thread.local_vars.get::<i64>(1).ok_or(InstructionError::InternalError)?;
 
     // push the long value from the local variable at index 1 onto the stack
+    thread.thread_stack.push(value);
 
-    todo!("Implement lload_1 instruction");
+    Ok(())
 }
 
 fn lload_2(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 2 is a long else throw InstructionsError::InternalError
+    let value = thread.local_vars.get::<i64>(2).ok_or(InstructionError::InternalError)?;
 
     // push the long value from the local variable at index 2 onto the stack
+    thread.thread_stack.push(value);
 
-    todo!("Implement lload_2 instruction");
+    Ok(())
 }
 
 fn lload_3(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 3 is a long else throw InstructionsError::InternalError
+    let value = thread.local_vars.get::<i64>(3).ok_or(InstructionError::InternalError)?;
 
     // push the long value from the local variable at index 3 onto the stack
+    thread.thread_stack.push(value);
 
-    todo!("Implement lload_3 instruction");
+    Ok(())
 }
 
 fn lmul(thread: &mut Thread) -> Result<()> {
@@ -2055,20 +2587,20 @@ fn lmul(thread: &mut Thread) -> Result<()> {
     let value1 = thread.thread_stack.pop::<i64>().ok_or(InstructionError::InternalError)?;
 
     // multiply the two long values
-
     // push the result onto the stack
+    thread.thread_stack.push(value1 * value2);
 
-    todo!("Implement lmul instruction");
+    Ok(())
 }
 
 fn lneg(thread: &mut Thread) -> Result<()> {
     let value = thread.thread_stack.pop::<i64>().ok_or(InstructionError::InternalError)?;
 
     // negate the long value
-
     // push the result onto the stack
+    thread.thread_stack.push(-value);
 
-    todo!("Implement lneg instruction");
+    Ok(())
 }
 
 fn lookupswitch(thread: &mut Thread) -> Result<()> {
@@ -2093,10 +2625,10 @@ fn lor(thread: &mut Thread) -> Result<()> {
     let value1 = thread.thread_stack.pop::<i64>().ok_or(InstructionError::InternalError)?;
 
     // perform a bitwise OR operation on the two long values
-
     // push the result onto the stack
+    thread.thread_stack.push(value1 | value2);
 
-    todo!("Implement lor instruction");
+    Ok(())
 }
 
 fn lrem(thread: &mut Thread) -> Result<()> {
@@ -2108,10 +2640,10 @@ fn lrem(thread: &mut Thread) -> Result<()> {
     }
 
     // compute the remainder of the division of the two long values
-
     // push the result onto the stack
+    thread.thread_stack.push(value1 % value2);
 
-    todo!("Implement lrem instruction");
+    Ok(())
 }
 
 fn lreturn(thread: &mut Thread) -> Result<()> {
@@ -2125,10 +2657,10 @@ fn lshl(thread: &mut Thread) -> Result<()> {
     let value1 = thread.thread_stack.pop::<i64>().ok_or(InstructionError::InternalError)?;
 
     // shift the long value to the left by the number of bits specified by the int value
-
     // push the result onto the stack
+    thread.thread_stack.push(value1.wrapping_shl(value2 as u32));
 
-    todo!("Implement lshl instruction");
+    Ok(())
 }
 
 fn lshr(thread: &mut Thread) -> Result<()> {
@@ -2136,10 +2668,10 @@ fn lshr(thread: &mut Thread) -> Result<()> {
     let value1 = thread.thread_stack.pop::<i64>().ok_or(InstructionError::InternalError)?;
 
     // shift the long value to the right by the number of bits specified by the int value, using sign extension
-
     // push the result onto the stack
+    thread.thread_stack.push(value1.wrapping_shr(value2 as u32));
 
-    todo!("Implement lshr instruction");
+    Ok(())
 }
 
 fn lstore(thread: &mut Thread) -> Result<()> {
@@ -2149,44 +2681,62 @@ fn lstore(thread: &mut Thread) -> Result<()> {
     }).ok_or(InstructionError::InternalError)?;
 
     // ensure index is within bounds of local variable array else throw InstructionsError::InternalError
+    if index >= thread.local_vars.byte_length() as u16 {
+        return Err(InstructionError::InternalError.into());
+    }
 
     // ensure the local variable at the index is a long else throw InstructionsError::InternalError
+    thread.local_vars.get::<i64>(index as usize).ok_or(InstructionError::InternalError)?;
 
     // pop the long value from the stack and store it in the local variable at the index
+    let value = thread.thread_stack.pop::<i64>().ok_or(InstructionError::InternalError)?;
+    thread.local_vars.set(index as usize, value);
 
-    todo!("Implement lstore instruction");
+    Ok(())
 }
 
 fn lstore_0(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 0 is a long else throw InstructionsError::InternalError
+    thread.local_vars.get::<i64>(0).ok_or(InstructionError::InternalError)?;
 
     // pop the long value from the stack and store it in the local variable at index 0
+    let value = thread.thread_stack.pop::<i64>().ok_or(InstructionError::InternalError)?;
+    thread.local_vars.set(0, value);
 
-    todo!("Implement lstore_0 instruction");
+    Ok(())
 }
 
 fn lstore_1(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 1 is a long else throw InstructionsError::InternalError
+    thread.local_vars.get::<i64>(1).ok_or(InstructionError::InternalError)?;
 
     // pop the long value from the stack and store it in the local variable at index 1
+    let value = thread.thread_stack.pop::<i64>().ok_or(InstructionError::InternalError)?;
+    thread.local_vars.set(1, value);
 
-    todo!("Implement lstore_1 instruction");
+    Ok(())
 }
 
 fn lstore_2(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 2 is a long else throw InstructionsError::InternalError
+    thread.local_vars.get::<i64>(2).ok_or(InstructionError::InternalError)?;
 
     // pop the long value from the stack and store it in the local variable at index 2
+    let value = thread.thread_stack.pop::<i64>().ok_or(InstructionError::InternalError)?;
+    thread.local_vars.set(2, value);
 
-    todo!("Implement lstore_2 instruction");
+    Ok(())
 }
 
 fn lstore_3(thread: &mut Thread) -> Result<()> {
     // ensure the local variable at index 3 is a long else throw InstructionsError::InternalError
+    thread.local_vars.get::<i64>(3).ok_or(InstructionError::InternalError)?;
 
     // pop the long value from the stack and store it in the local variable at index 3
+    let value = thread.thread_stack.pop::<i64>().ok_or(InstructionError::InternalError)?;
+    thread.local_vars.set(3, value);
 
-    todo!("Implement lstore_3 instruction");
+    Ok(())
 }
 
 fn lsub(thread: &mut Thread) -> Result<()> {
@@ -2194,10 +2744,10 @@ fn lsub(thread: &mut Thread) -> Result<()> {
     let value1 = thread.thread_stack.pop::<i64>().ok_or(InstructionError::InternalError)?;
 
     // subtract the two long values
-
     // push the result onto the stack
+    thread.thread_stack.push(value1 - value2);
 
-    todo!("Implement lsub instruction");
+    Ok(())
 }
 
 fn lushr(thread: &mut Thread) -> Result<()> {
@@ -2205,10 +2755,10 @@ fn lushr(thread: &mut Thread) -> Result<()> {
     let value1 = thread.thread_stack.pop::<i64>().ok_or(InstructionError::InternalError)?;
 
     // shift the long value to the right by the number of bits specified by the int value, using zero extension
-
     // push the result onto the stack
+    thread.thread_stack.push(((value1 as u64) >> value2) as i64);
 
-    todo!("Implement lushr instruction");
+    Ok(())
 }
 
 fn lxor(thread: &mut Thread) -> Result<()> {
@@ -2216,10 +2766,10 @@ fn lxor(thread: &mut Thread) -> Result<()> {
     let value1 = thread.thread_stack.pop::<i64>().ok_or(InstructionError::InternalError)?;
 
     // perform a bitwise XOR operation on the two long values
-
     // push the result onto the stack
+    thread.thread_stack.push(value1 ^ value2);
 
-    todo!("Implement lxor instruction");
+    Ok(())
 }
 
 fn monitorenter(thread: &mut Thread) -> Result<()> {
@@ -2286,13 +2836,15 @@ fn newarray(thread: &mut Thread) -> Result<()> {
     }
 
     // create a new array of the specified type and length and push a reference to it onto the stack
+    let array_value = create_array_from_char(atype as char, count as u16);
+    let mut lock = REFERENCE_TABLE.lock().map(|r| r).map_err(|_| InstructionError::InternalError)?;
+    let array_ref = lock.add_reference(ReferenceValue::Array(array_value));
+    thread.thread_stack.push(array_ref);
 
-    todo!("Implement newarray instruction");
+    Ok(())
 }
 
 fn nop(thread: &mut Thread) -> Result<()> {
-    // do nothing
-
     Ok(())
 }
 
@@ -2362,12 +2914,31 @@ fn saload(thread: &mut Thread) -> Result<()> {
     }
 
     // get the array referenced
+    let lock = REFERENCE_TABLE.lock().map(|r| r).map_err(|_| InstructionError::InternalError)?;
+    let array = lock.get_reference(&array_ref).ok_or(InstructionError::InternalError)?;
+
+    // ensure this is an array
+    if !array.is_array() {
+        return Err(InstructionError::InternalError.into());
+    }
+
+    let array = array.as_array().map(|a| a).ok_or(InstructionError::InternalError)?;
+
+    // ensure the array is of type short
+    if !matches!(array, AnyArrayValue::I16(_)){
+        return Err(InstructionError::InternalError.into());
+    }
 
     // ensure array index is within bounds else throw ArrayIndexOutOfBoundsException
+    if index < 0 || index >= array.len() as i32 {
+        return Err(InstructionError::ArrayIndexOutOfBoundsException.into());
+    }
 
     // push the value at the index onto the stack
+    let value: i16 = array.get(index as usize).ok_or(InstructionError::InternalError)?.downcast_ref::<i16>().ok_or(InstructionError::InternalError)?.clone();
+    thread.thread_stack.push(value);
 
-    todo!("Implement saload instruction");
+    Ok(())
 }
 
 fn sastore(thread: &mut Thread) -> Result<()> {
@@ -2380,20 +2951,39 @@ fn sastore(thread: &mut Thread) -> Result<()> {
     }
 
     // get the array referenced
+    let mut lock = REFERENCE_TABLE.lock().map(|r| r).map_err(|_| InstructionError::InternalError)?;
+    let array = lock.get_mut_reference(&array_ref).ok_or(InstructionError::InternalError)?;
+
+    // ensure this is an array
+    if !array.is_array() {
+        return Err(InstructionError::InternalError.into());
+    }
+
+    let array: &mut AnyArrayValue = array.as_mut_array().ok_or(InstructionError::InternalError)?;
+
+    // ensure the array is of type short
+    if !matches!(array, AnyArrayValue::I16(_)){
+        return Err(InstructionError::InternalError.into());
+    }
 
     // ensure array index is within bounds else throw ArrayIndexOutOfBoundsException
+    if index < 0 || index >= array.len() as i32 {
+        return Err(InstructionError::ArrayIndexOutOfBoundsException.into());
+    }
 
     // set the value at the index to the value popped from the stack
+    array.set(index as usize, Box::new(value as i16)).map_err(|_| InstructionError::InternalError)?;
 
-    todo!("Implement sastore instruction");
+    Ok(())
 }
 
 fn sipush(thread: &mut Thread) -> Result<()> {
-    let value = thread.read_short_from_pc().ok_or(InstructionError::InternalError)?;
+    let value = thread.read_short_from_pc().ok_or(InstructionError::InternalError)? as i16;
 
     // push the short value onto the stack as an int
+    thread.thread_stack.push(value as i32);
 
-    todo!("Implement sipush instruction");
+    Ok(())
 }
 
 fn swap(thread: &mut Thread) -> Result<()> {
@@ -2401,7 +2991,6 @@ fn swap(thread: &mut Thread) -> Result<()> {
     let value2 = thread.thread_stack.pop::<i16>().ok_or(InstructionError::InternalError)?;
 
     // push the values back onto the stack in reverse order
-
     thread.thread_stack.push::<i16>(value1);
     thread.thread_stack.push::<i16>(value2);
 
@@ -2433,12 +3022,53 @@ fn wide(thread: &mut Thread) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::runtime::thread::{JVMHeap, MethodArea, NativeMethodStack, Thread, ThreadStack};
+    use crate::runtime::thread::{JVMHeap, LocalVars, MethodArea, NativeMethodStack, Thread, ThreadStack};
     use std::sync::{Arc, Mutex};
 
+    /// Thread with no bytecode and 16 local-variable slots (zero-filled).
     fn make_thread() -> Thread {
         Thread {
             pc: 0,
+            code: Vec::new(),
+            local_vars: LocalVars::new(16),
+            thread_stack: ThreadStack::new(),
+            jvm_heap: Arc::new(Mutex::new(JVMHeap {})),
+            method_area: Arc::new(Mutex::new(MethodArea {})),
+            native_method_stack: NativeMethodStack {},
+            wide_mode: false,
+        }
+    }
+
+    /// Thread whose operand bytes begin at code[0] with pc=0.
+    /// Use for instructions that consume bytes from the stream (bipush, sipush,
+    /// iload, etc.).
+    fn make_thread_with_code(code: Vec<u8>) -> Thread {
+        Thread {
+            pc: 0,
+            code,
+            local_vars: LocalVars::new(16),
+            thread_stack: ThreadStack::new(),
+            jvm_heap: Arc::new(Mutex::new(JVMHeap {})),
+            method_area: Arc::new(Mutex::new(MethodArea {})),
+            native_method_stack: NativeMethodStack {},
+            wide_mode: false,
+        }
+    }
+
+    /// Thread with explicit `pc` — used for branch-instruction tests.
+    ///
+    /// Convention: set `pc = 1` so that the opcode sits at address 0 (already
+    /// consumed by the dispatch loop).  Operand bytes follow at code[1..].
+    ///
+    ///   branch target = opcode_address + branchoffset
+    ///                 = (pc_at_entry – 1) + branchoffset
+    ///
+    /// With pc=1: target = 0 + branchoffset = branchoffset.
+    fn make_thread_at_pc(pc: usize, code: Vec<u8>) -> Thread {
+        Thread {
+            pc,
+            code,
+            local_vars: LocalVars::new(16),
             thread_stack: ThreadStack::new(),
             jvm_heap: Arc::new(Mutex::new(JVMHeap {})),
             method_area: Arc::new(Mutex::new(MethodArea {})),
@@ -2573,139 +3203,317 @@ mod tests {
     }
 
     // ── 0x10  bipush ──────────────────────────────────────────────────────────
+    // Reads one signed byte from the bytecode stream and pushes it sign-extended
+    // to int on the operand stack.
 
     #[test]
-    #[should_panic]
-    fn test_bipush_unimplemented() {
-        let _ = bipush(&mut make_thread());
+    fn test_bipush_positive_value() {
+        let mut t = make_thread_with_code(vec![42]);
+        assert!(bipush(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 42);
+    }
+
+    #[test]
+    fn test_bipush_sign_extends_negative_byte() {
+        // 0xFF = -1 as signed byte → -1 as i32
+        let mut t = make_thread_with_code(vec![0xFF]);
+        assert!(bipush(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), -1);
+    }
+
+    #[test]
+    fn test_bipush_min_signed_byte() {
+        // 0x80 = -128 as signed byte
+        let mut t = make_thread_with_code(vec![0x80]);
+        assert!(bipush(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), -128);
+    }
+
+    #[test]
+    fn test_bipush_max_signed_byte() {
+        // 0x7F = 127 as signed byte
+        let mut t = make_thread_with_code(vec![0x7F]);
+        assert!(bipush(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 127);
+    }
+
+    #[test]
+    fn test_bipush_no_operand_returns_internal_error() {
+        let mut t = make_thread_with_code(vec![]); // no bytes to read
+        assert!(matches!(
+            bipush(&mut t).unwrap_err().downcast_ref::<InstructionError>(),
+            Some(InstructionError::InternalError)
+        ));
     }
 
     // ── 0x11  sipush ──────────────────────────────────────────────────────────
+    // Reads a big-endian signed 16-bit value and pushes it sign-extended to int.
 
     #[test]
-    #[should_panic]
-    fn test_sipush_unimplemented() {
-        let _ = sipush(&mut make_thread());
+    fn test_sipush_positive_value() {
+        // [0x01, 0x00] = 256 big-endian
+        let mut t = make_thread_with_code(vec![0x01, 0x00]);
+        assert!(sipush(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 256);
+    }
+
+    #[test]
+    fn test_sipush_sign_extends_negative_short() {
+        // [0xFF, 0x00] = 0xFF00 = -256 as i16
+        let mut t = make_thread_with_code(vec![0xFF, 0x00]);
+        assert!(sipush(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), -256);
+    }
+
+    #[test]
+    fn test_sipush_max_short() {
+        // [0x7F, 0xFF] = 32767
+        let mut t = make_thread_with_code(vec![0x7F, 0xFF]);
+        assert!(sipush(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 32767);
+    }
+
+    #[test]
+    fn test_sipush_min_short() {
+        // [0x80, 0x00] = -32768
+        let mut t = make_thread_with_code(vec![0x80, 0x00]);
+        assert!(sipush(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), -32768);
     }
 
     // ── 0x12–0x14  ldc / ldc_w / ldc2_w ──────────────────────────────────────
+    // These instructions require constant-pool infrastructure (MethodArea) that
+    // is not yet implemented.  Full tests will be added once the constant-pool
+    // lookup is available.  For now they assert that calling the instruction
+    // without proper infrastructure panics (todo!).
 
     #[test]
     #[should_panic]
-    fn test_ldc_unimplemented() {
-        let _ = ldc(&mut make_thread());
+    fn test_ldc_requires_constant_pool() {
+        // TODO: once constant pool is available, test that ldc pushes an int,
+        // float, or String reference from the pool entry at the 1-byte index.
+        let _ = ldc(&mut make_thread_with_code(vec![0]));
     }
 
     #[test]
     #[should_panic]
-    fn test_ldc_w_unimplemented() {
-        let _ = ldc_w(&mut make_thread());
+    fn test_ldc_w_requires_constant_pool() {
+        // TODO: same as ldc but with a 2-byte (wide) index.
+        let _ = ldc_w(&mut make_thread_with_code(vec![0x00, 0x00]));
     }
 
     #[test]
     #[should_panic]
-    fn test_ldc2_w_unimplemented() {
-        let _ = ldc2_w(&mut make_thread());
+    fn test_ldc2_w_requires_constant_pool() {
+        // TODO: pushes a long or double from the pool; uses a 2-byte index.
+        let _ = ldc2_w(&mut make_thread_with_code(vec![0x00, 0x00]));
     }
 
     // ── 0x15–0x19  generic loads ──────────────────────────────────────────────
+    // Each instruction reads an index from the bytecode (1 byte normally,
+    // 2 bytes in wide mode) then pushes the corresponding local variable.
 
     #[test]
-    #[should_panic]
-    fn test_iload_unimplemented() {
-        let _ = iload(&mut make_thread());
+    fn test_iload_pushes_int_from_local_var() {
+        let mut t = make_thread_with_code(vec![2]); // index = 2
+        t.local_vars.set::<i32>(2, 42);
+        assert!(iload(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 42);
     }
 
     #[test]
-    #[should_panic]
-    fn test_lload_unimplemented() {
-        let _ = lload(&mut make_thread());
+    fn test_iload_wide_mode_uses_two_byte_index() {
+        let mut t = make_thread_with_code(vec![0x00, 0x03]); // index = 3
+        t.wide_mode = true;
+        t.local_vars.set::<i32>(3, 99);
+        assert!(iload(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 99);
     }
 
     #[test]
-    #[should_panic]
-    fn test_fload_unimplemented() {
-        let _ = fload(&mut make_thread());
+    fn test_lload_pushes_long_from_local_var() {
+        let mut t = make_thread_with_code(vec![1]); // index = 1
+        t.local_vars.set::<i64>(1, 123456789012345i64);
+        assert!(lload(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i64>().unwrap(), 123456789012345i64);
     }
 
     #[test]
-    #[should_panic]
-    fn test_dload_unimplemented() {
-        let _ = dload(&mut make_thread());
+    fn test_fload_pushes_float_from_local_var() {
+        let mut t = make_thread_with_code(vec![0]); // index = 0
+        t.local_vars.set::<f32>(0, 3.14f32);
+        assert!(fload(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<f32>().unwrap(), 3.14f32);
     }
 
     #[test]
-    #[should_panic]
-    fn test_aload_unimplemented() {
-        let _ = aload(&mut make_thread());
+    fn test_dload_pushes_double_from_local_var() {
+        let mut t = make_thread_with_code(vec![0]); // index = 0
+        t.local_vars.set::<f64>(0, 2.718f64);
+        assert!(dload(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<f64>().unwrap(), 2.718f64);
+    }
+
+    #[test]
+    fn test_aload_pushes_reference_from_local_var() {
+        let mut t = make_thread_with_code(vec![1]); // index = 1
+        t.local_vars.set::<Reference>(1, Reference::new(7));
+        assert!(aload(&mut t).is_ok());
+        let r = t.thread_stack.pop::<Reference>().unwrap();
+        assert_eq!(r.get_ref_index(), 7);
     }
 
     // ── 0x1a–0x2d  indexed loads ──────────────────────────────────────────────
+    // iload_N: push int from local variable slot N onto the operand stack.
 
     #[test]
-    #[should_panic]
-    fn test_iload_0_unimplemented() { let _ = iload_0(&mut make_thread()); }
+    fn test_iload_0_pushes_int_from_slot_0() {
+        let mut t = make_thread();
+        t.local_vars.set::<i32>(0, 10);
+        assert!(iload_0(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 10);
+    }
     #[test]
-    #[should_panic]
-    fn test_iload_1_unimplemented() { let _ = iload_1(&mut make_thread()); }
+    fn test_iload_1_pushes_int_from_slot_1() {
+        let mut t = make_thread();
+        t.local_vars.set::<i32>(1, 20);
+        assert!(iload_1(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 20);
+    }
     #[test]
-    #[should_panic]
-    fn test_iload_2_unimplemented() { let _ = iload_2(&mut make_thread()); }
+    fn test_iload_2_pushes_int_from_slot_2() {
+        let mut t = make_thread();
+        t.local_vars.set::<i32>(2, 30);
+        assert!(iload_2(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 30);
+    }
     #[test]
-    #[should_panic]
-    fn test_iload_3_unimplemented() { let _ = iload_3(&mut make_thread()); }
+    fn test_iload_3_pushes_int_from_slot_3() {
+        let mut t = make_thread();
+        t.local_vars.set::<i32>(3, 40);
+        assert!(iload_3(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 40);
+    }
 
+    // lload_N: push long from local variable slot N.
     #[test]
-    #[should_panic]
-    fn test_lload_0_unimplemented() { let _ = lload_0(&mut make_thread()); }
+    fn test_lload_0_pushes_long_from_slot_0() {
+        let mut t = make_thread();
+        t.local_vars.set::<i64>(0, 100i64);
+        assert!(lload_0(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i64>().unwrap(), 100i64);
+    }
     #[test]
-    #[should_panic]
-    fn test_lload_1_unimplemented() { let _ = lload_1(&mut make_thread()); }
+    fn test_lload_1_pushes_long_from_slot_1() {
+        let mut t = make_thread();
+        t.local_vars.set::<i64>(1, 200i64);
+        assert!(lload_1(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i64>().unwrap(), 200i64);
+    }
     #[test]
-    #[should_panic]
-    fn test_lload_2_unimplemented() { let _ = lload_2(&mut make_thread()); }
+    fn test_lload_2_pushes_long_from_slot_2() {
+        let mut t = make_thread();
+        t.local_vars.set::<i64>(2, 300i64);
+        assert!(lload_2(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i64>().unwrap(), 300i64);
+    }
     #[test]
-    #[should_panic]
-    fn test_lload_3_unimplemented() { let _ = lload_3(&mut make_thread()); }
+    fn test_lload_3_pushes_long_from_slot_3() {
+        let mut t = make_thread();
+        t.local_vars.set::<i64>(3, 400i64);
+        assert!(lload_3(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i64>().unwrap(), 400i64);
+    }
 
+    // fload_N: push float from local variable slot N.
     #[test]
-    #[should_panic]
-    fn test_fload_0_unimplemented() { let _ = fload_0(&mut make_thread()); }
+    fn test_fload_0_pushes_float_from_slot_0() {
+        let mut t = make_thread();
+        t.local_vars.set::<f32>(0, 1.5f32);
+        assert!(fload_0(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<f32>().unwrap(), 1.5f32);
+    }
     #[test]
-    #[should_panic]
-    fn test_fload_1_unimplemented() { let _ = fload_1(&mut make_thread()); }
+    fn test_fload_1_pushes_float_from_slot_1() {
+        let mut t = make_thread();
+        t.local_vars.set::<f32>(1, 2.5f32);
+        assert!(fload_1(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<f32>().unwrap(), 2.5f32);
+    }
     #[test]
-    #[should_panic]
-    fn test_fload_2_unimplemented() { let _ = fload_2(&mut make_thread()); }
+    fn test_fload_2_pushes_float_from_slot_2() {
+        let mut t = make_thread();
+        t.local_vars.set::<f32>(2, 3.5f32);
+        assert!(fload_2(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<f32>().unwrap(), 3.5f32);
+    }
     #[test]
-    #[should_panic]
-    fn test_fload_3_unimplemented() { let _ = fload_3(&mut make_thread()); }
+    fn test_fload_3_pushes_float_from_slot_3() {
+        let mut t = make_thread();
+        t.local_vars.set::<f32>(3, 4.5f32);
+        assert!(fload_3(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<f32>().unwrap(), 4.5f32);
+    }
 
+    // dload_N: push double from local variable slot N.
     #[test]
-    #[should_panic]
-    fn test_dload_0_unimplemented() { let _ = dload_0(&mut make_thread()); }
+    fn test_dload_0_pushes_double_from_slot_0() {
+        let mut t = make_thread();
+        t.local_vars.set::<f64>(0, 1.1f64);
+        assert!(dload_0(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<f64>().unwrap(), 1.1f64);
+    }
     #[test]
-    #[should_panic]
-    fn test_dload_1_unimplemented() { let _ = dload_1(&mut make_thread()); }
+    fn test_dload_1_pushes_double_from_slot_1() {
+        let mut t = make_thread();
+        t.local_vars.set::<f64>(1, 2.2f64);
+        assert!(dload_1(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<f64>().unwrap(), 2.2f64);
+    }
     #[test]
-    #[should_panic]
-    fn test_dload_2_unimplemented() { let _ = dload_2(&mut make_thread()); }
+    fn test_dload_2_pushes_double_from_slot_2() {
+        let mut t = make_thread();
+        t.local_vars.set::<f64>(2, 3.3f64);
+        assert!(dload_2(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<f64>().unwrap(), 3.3f64);
+    }
     #[test]
-    #[should_panic]
-    fn test_dload_3_unimplemented() { let _ = dload_3(&mut make_thread()); }
+    fn test_dload_3_pushes_double_from_slot_3() {
+        let mut t = make_thread();
+        t.local_vars.set::<f64>(3, 4.4f64);
+        assert!(dload_3(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<f64>().unwrap(), 4.4f64);
+    }
 
+    // aload_N: push reference from local variable slot N.
     #[test]
-    #[should_panic]
-    fn test_aload_0_unimplemented() { let _ = aload_0(&mut make_thread()); }
+    fn test_aload_0_pushes_reference_from_slot_0() {
+        let mut t = make_thread();
+        t.local_vars.set::<Reference>(0, Reference::new(5));
+        assert!(aload_0(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<Reference>().unwrap().get_ref_index(), 5);
+    }
     #[test]
-    #[should_panic]
-    fn test_aload_1_unimplemented() { let _ = aload_1(&mut make_thread()); }
+    fn test_aload_1_pushes_reference_from_slot_1() {
+        let mut t = make_thread();
+        t.local_vars.set::<Reference>(1, Reference::new(6));
+        assert!(aload_1(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<Reference>().unwrap().get_ref_index(), 6);
+    }
     #[test]
-    #[should_panic]
-    fn test_aload_2_unimplemented() { let _ = aload_2(&mut make_thread()); }
+    fn test_aload_2_pushes_reference_from_slot_2() {
+        let mut t = make_thread();
+        t.local_vars.set::<Reference>(2, Reference::new(7));
+        assert!(aload_2(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<Reference>().unwrap().get_ref_index(), 7);
+    }
     #[test]
-    #[should_panic]
-    fn test_aload_3_unimplemented() { let _ = aload_3(&mut make_thread()); }
+    fn test_aload_3_pushes_reference_from_slot_3() {
+        let mut t = make_thread();
+        t.local_vars.set::<Reference>(3, Reference::new(8));
+        assert!(aload_3(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<Reference>().unwrap().get_ref_index(), 8);
+    }
 
     // ── 0x2e–0x35  array loads ────────────────────────────────────────────────
 
@@ -2716,14 +3524,6 @@ mod tests {
         t.thread_stack.push::<i32>(0);
         assert!(matches!(iaload(&mut t).unwrap_err().downcast_ref::<InstructionError>(), Some(InstructionError::NullPointerException)));
     }
-    #[test]
-    #[should_panic]
-    fn test_iaload_unimplemented() {
-        let mut t = make_thread();
-        t.thread_stack.push(Reference::new(1));
-        t.thread_stack.push::<i32>(0);
-        let _ = iaload(&mut t);
-    }
 
     #[test]
     fn test_laload_null_ref_throws() {
@@ -2731,14 +3531,6 @@ mod tests {
         t.thread_stack.push(Reference::new(0));
         t.thread_stack.push::<i32>(0);
         assert!(matches!(laload(&mut t).unwrap_err().downcast_ref::<InstructionError>(), Some(InstructionError::NullPointerException)));
-    }
-    #[test]
-    #[should_panic]
-    fn test_laload_unimplemented() {
-        let mut t = make_thread();
-        t.thread_stack.push(Reference::new(1));
-        t.thread_stack.push::<i32>(0);
-        let _ = laload(&mut t);
     }
 
     #[test]
@@ -2748,14 +3540,6 @@ mod tests {
         t.thread_stack.push::<i32>(0);
         assert!(matches!(faload(&mut t).unwrap_err().downcast_ref::<InstructionError>(), Some(InstructionError::NullPointerException)));
     }
-    #[test]
-    #[should_panic]
-    fn test_faload_unimplemented() {
-        let mut t = make_thread();
-        t.thread_stack.push(Reference::new(1));
-        t.thread_stack.push::<i32>(0);
-        let _ = faload(&mut t);
-    }
 
     #[test]
     fn test_daload_null_ref_throws() {
@@ -2763,14 +3547,6 @@ mod tests {
         t.thread_stack.push(Reference::new(0));
         t.thread_stack.push::<i32>(0);
         assert!(matches!(daload(&mut t).unwrap_err().downcast_ref::<InstructionError>(), Some(InstructionError::NullPointerException)));
-    }
-    #[test]
-    #[should_panic]
-    fn test_daload_unimplemented() {
-        let mut t = make_thread();
-        t.thread_stack.push(Reference::new(1));
-        t.thread_stack.push::<i32>(0);
-        let _ = daload(&mut t);
     }
 
     #[test]
@@ -2788,14 +3564,6 @@ mod tests {
         t.thread_stack.push::<i32>(0);
         assert!(matches!(baload(&mut t).unwrap_err().downcast_ref::<InstructionError>(), Some(InstructionError::NullPointerException)));
     }
-    #[test]
-    #[should_panic]
-    fn test_baload_unimplemented() {
-        let mut t = make_thread();
-        t.thread_stack.push(Reference::new(1));
-        t.thread_stack.push::<i32>(0);
-        let _ = baload(&mut t);
-    }
 
     #[test]
     fn test_caload_null_ref_throws() {
@@ -2803,14 +3571,6 @@ mod tests {
         t.thread_stack.push(Reference::new(0));
         t.thread_stack.push::<i32>(0);
         assert!(matches!(caload(&mut t).unwrap_err().downcast_ref::<InstructionError>(), Some(InstructionError::NullPointerException)));
-    }
-    #[test]
-    #[should_panic]
-    fn test_caload_unimplemented() {
-        let mut t = make_thread();
-        t.thread_stack.push(Reference::new(1));
-        t.thread_stack.push::<i32>(0);
-        let _ = caload(&mut t);
     }
 
     #[test]
@@ -2820,99 +3580,204 @@ mod tests {
         t.thread_stack.push::<i32>(0);
         assert!(matches!(saload(&mut t).unwrap_err().downcast_ref::<InstructionError>(), Some(InstructionError::NullPointerException)));
     }
-    #[test]
-    #[should_panic]
-    fn test_saload_unimplemented() {
-        let mut t = make_thread();
-        t.thread_stack.push(Reference::new(1));
-        t.thread_stack.push::<i32>(0);
-        let _ = saload(&mut t);
-    }
 
     // ── 0x36–0x3a  generic stores ─────────────────────────────────────────────
+    // Each instruction reads a slot index from the bytecode stream then pops
+    // a value from the operand stack and stores it in that local-variable slot.
 
     #[test]
-    #[should_panic]
-    fn test_istore_unimplemented() { let _ = istore(&mut make_thread()); }
+    fn test_istore_pops_int_into_indexed_local_var() {
+        let mut t = make_thread_with_code(vec![2]); // index = 2
+        t.thread_stack.push::<i32>(55);
+        assert!(istore(&mut t).is_ok());
+        assert_eq!(t.local_vars.get::<i32>(2).unwrap(), 55);
+        assert!(t.thread_stack.pop::<i32>().is_none()); // stack drained
+    }
+
     #[test]
-    #[should_panic]
-    fn test_lstore_unimplemented() { let _ = lstore(&mut make_thread()); }
+    fn test_lstore_pops_long_into_indexed_local_var() {
+        let mut t = make_thread_with_code(vec![1]); // index = 1
+        t.thread_stack.push::<i64>(9876543210i64);
+        assert!(lstore(&mut t).is_ok());
+        assert_eq!(t.local_vars.get::<i64>(1).unwrap(), 9876543210i64);
+    }
+
     #[test]
-    #[should_panic]
-    fn test_fstore_unimplemented() { let _ = fstore(&mut make_thread()); }
+    fn test_fstore_pops_float_into_indexed_local_var() {
+        let mut t = make_thread_with_code(vec![0]); // index = 0
+        t.thread_stack.push::<f32>(7.77f32);
+        assert!(fstore(&mut t).is_ok());
+        assert_eq!(t.local_vars.get::<f32>(0).unwrap(), 7.77f32);
+    }
+
     #[test]
-    #[should_panic]
-    fn test_dstore_unimplemented() { let _ = dstore(&mut make_thread()); }
+    fn test_dstore_pops_double_into_indexed_local_var() {
+        let mut t = make_thread_with_code(vec![0]); // index = 0
+        t.thread_stack.push::<f64>(3.14159f64);
+        assert!(dstore(&mut t).is_ok());
+        assert_eq!(t.local_vars.get::<f64>(0).unwrap(), 3.14159f64);
+    }
+
     #[test]
-    #[should_panic]
-    fn test_astore_unimplemented() { let _ = astore(&mut make_thread()); }
+    fn test_astore_pops_reference_into_indexed_local_var() {
+        let mut t = make_thread_with_code(vec![3]); // index = 3
+        t.thread_stack.push::<Reference>(Reference::new(9));
+        assert!(astore(&mut t).is_ok());
+        assert_eq!(t.local_vars.get::<Reference>(3).unwrap().get_ref_index(), 9);
+    }
 
     // ── 0x3b–0x4e  indexed stores ─────────────────────────────────────────────
+    // istore_N: pop int and store in local variable slot N.
 
     #[test]
-    #[should_panic]
-    fn test_istore_0_unimplemented() { let _ = istore_0(&mut make_thread()); }
+    fn test_istore_0_stores_int_into_slot_0() {
+        let mut t = make_thread();
+        t.thread_stack.push::<i32>(11);
+        assert!(istore_0(&mut t).is_ok());
+        assert_eq!(t.local_vars.get::<i32>(0).unwrap(), 11);
+        assert!(t.thread_stack.pop::<i32>().is_none());
+    }
     #[test]
-    #[should_panic]
-    fn test_istore_1_unimplemented() { let _ = istore_1(&mut make_thread()); }
+    fn test_istore_1_stores_int_into_slot_1() {
+        let mut t = make_thread();
+        t.thread_stack.push::<i32>(22);
+        assert!(istore_1(&mut t).is_ok());
+        assert_eq!(t.local_vars.get::<i32>(1).unwrap(), 22);
+    }
     #[test]
-    #[should_panic]
-    fn test_istore_2_unimplemented() { let _ = istore_2(&mut make_thread()); }
+    fn test_istore_2_stores_int_into_slot_2() {
+        let mut t = make_thread();
+        t.thread_stack.push::<i32>(33);
+        assert!(istore_2(&mut t).is_ok());
+        assert_eq!(t.local_vars.get::<i32>(2).unwrap(), 33);
+    }
     #[test]
-    #[should_panic]
-    fn test_istore_3_unimplemented() { let _ = istore_3(&mut make_thread()); }
+    fn test_istore_3_stores_int_into_slot_3() {
+        let mut t = make_thread();
+        t.thread_stack.push::<i32>(44);
+        assert!(istore_3(&mut t).is_ok());
+        assert_eq!(t.local_vars.get::<i32>(3).unwrap(), 44);
+    }
 
+    // lstore_N: pop long and store in local variable slot N.
     #[test]
-    #[should_panic]
-    fn test_lstore_0_unimplemented() { let _ = lstore_0(&mut make_thread()); }
+    fn test_lstore_0_stores_long_into_slot_0() {
+        let mut t = make_thread();
+        t.thread_stack.push::<i64>(111i64);
+        assert!(lstore_0(&mut t).is_ok());
+        assert_eq!(t.local_vars.get::<i64>(0).unwrap(), 111i64);
+    }
     #[test]
-    #[should_panic]
-    fn test_lstore_1_unimplemented() { let _ = lstore_1(&mut make_thread()); }
+    fn test_lstore_1_stores_long_into_slot_1() {
+        let mut t = make_thread();
+        t.thread_stack.push::<i64>(222i64);
+        assert!(lstore_1(&mut t).is_ok());
+        assert_eq!(t.local_vars.get::<i64>(1).unwrap(), 222i64);
+    }
     #[test]
-    #[should_panic]
-    fn test_lstore_2_unimplemented() { let _ = lstore_2(&mut make_thread()); }
+    fn test_lstore_2_stores_long_into_slot_2() {
+        let mut t = make_thread();
+        t.thread_stack.push::<i64>(333i64);
+        assert!(lstore_2(&mut t).is_ok());
+        assert_eq!(t.local_vars.get::<i64>(2).unwrap(), 333i64);
+    }
     #[test]
-    #[should_panic]
-    fn test_lstore_3_unimplemented() { let _ = lstore_3(&mut make_thread()); }
+    fn test_lstore_3_stores_long_into_slot_3() {
+        let mut t = make_thread();
+        t.thread_stack.push::<i64>(444i64);
+        assert!(lstore_3(&mut t).is_ok());
+        assert_eq!(t.local_vars.get::<i64>(3).unwrap(), 444i64);
+    }
 
+    // fstore_N: pop float and store in local variable slot N.
     #[test]
-    #[should_panic]
-    fn test_fstore_0_unimplemented() { let _ = fstore_0(&mut make_thread()); }
+    fn test_fstore_0_stores_float_into_slot_0() {
+        let mut t = make_thread();
+        t.thread_stack.push::<f32>(1.1f32);
+        assert!(fstore_0(&mut t).is_ok());
+        assert_eq!(t.local_vars.get::<f32>(0).unwrap(), 1.1f32);
+    }
     #[test]
-    #[should_panic]
-    fn test_fstore_1_unimplemented() { let _ = fstore_1(&mut make_thread()); }
+    fn test_fstore_1_stores_float_into_slot_1() {
+        let mut t = make_thread();
+        t.thread_stack.push::<f32>(2.2f32);
+        assert!(fstore_1(&mut t).is_ok());
+        assert_eq!(t.local_vars.get::<f32>(1).unwrap(), 2.2f32);
+    }
     #[test]
-    #[should_panic]
-    fn test_fstore_2_unimplemented() { let _ = fstore_2(&mut make_thread()); }
+    fn test_fstore_2_stores_float_into_slot_2() {
+        let mut t = make_thread();
+        t.thread_stack.push::<f32>(3.3f32);
+        assert!(fstore_2(&mut t).is_ok());
+        assert_eq!(t.local_vars.get::<f32>(2).unwrap(), 3.3f32);
+    }
     #[test]
-    #[should_panic]
-    fn test_fstore_3_unimplemented() { let _ = fstore_3(&mut make_thread()); }
+    fn test_fstore_3_stores_float_into_slot_3() {
+        let mut t = make_thread();
+        t.thread_stack.push::<f32>(4.4f32);
+        assert!(fstore_3(&mut t).is_ok());
+        assert_eq!(t.local_vars.get::<f32>(3).unwrap(), 4.4f32);
+    }
 
+    // dstore_N: pop double and store in local variable slot N.
     #[test]
-    #[should_panic]
-    fn test_dstore_0_unimplemented() { let _ = dstore_0(&mut make_thread()); }
+    fn test_dstore_0_stores_double_into_slot_0() {
+        let mut t = make_thread();
+        t.thread_stack.push::<f64>(0.1f64);
+        assert!(dstore_0(&mut t).is_ok());
+        assert_eq!(t.local_vars.get::<f64>(0).unwrap(), 0.1f64);
+    }
     #[test]
-    #[should_panic]
-    fn test_dstore_1_unimplemented() { let _ = dstore_1(&mut make_thread()); }
+    fn test_dstore_1_stores_double_into_slot_1() {
+        let mut t = make_thread();
+        t.thread_stack.push::<f64>(0.2f64);
+        assert!(dstore_1(&mut t).is_ok());
+        assert_eq!(t.local_vars.get::<f64>(1).unwrap(), 0.2f64);
+    }
     #[test]
-    #[should_panic]
-    fn test_dstore_2_unimplemented() { let _ = dstore_2(&mut make_thread()); }
+    fn test_dstore_2_stores_double_into_slot_2() {
+        let mut t = make_thread();
+        t.thread_stack.push::<f64>(0.3f64);
+        assert!(dstore_2(&mut t).is_ok());
+        assert_eq!(t.local_vars.get::<f64>(2).unwrap(), 0.3f64);
+    }
     #[test]
-    #[should_panic]
-    fn test_dstore_3_unimplemented() { let _ = dstore_3(&mut make_thread()); }
+    fn test_dstore_3_stores_double_into_slot_3() {
+        let mut t = make_thread();
+        t.thread_stack.push::<f64>(0.4f64);
+        assert!(dstore_3(&mut t).is_ok());
+        assert_eq!(t.local_vars.get::<f64>(3).unwrap(), 0.4f64);
+    }
 
+    // astore_N: pop reference and store in local variable slot N.
     #[test]
-    #[should_panic]
-    fn test_astore_0_unimplemented() { let _ = astore_0(&mut make_thread()); }
+    fn test_astore_0_stores_reference_into_slot_0() {
+        let mut t = make_thread();
+        t.thread_stack.push::<Reference>(Reference::new(10));
+        assert!(astore_0(&mut t).is_ok());
+        assert_eq!(t.local_vars.get::<Reference>(0).unwrap().get_ref_index(), 10);
+    }
     #[test]
-    #[should_panic]
-    fn test_astore_1_unimplemented() { let _ = astore_1(&mut make_thread()); }
+    fn test_astore_1_stores_reference_into_slot_1() {
+        let mut t = make_thread();
+        t.thread_stack.push::<Reference>(Reference::new(11));
+        assert!(astore_1(&mut t).is_ok());
+        assert_eq!(t.local_vars.get::<Reference>(1).unwrap().get_ref_index(), 11);
+    }
     #[test]
-    #[should_panic]
-    fn test_astore_2_unimplemented() { let _ = astore_2(&mut make_thread()); }
+    fn test_astore_2_stores_reference_into_slot_2() {
+        let mut t = make_thread();
+        t.thread_stack.push::<Reference>(Reference::new(12));
+        assert!(astore_2(&mut t).is_ok());
+        assert_eq!(t.local_vars.get::<Reference>(2).unwrap().get_ref_index(), 12);
+    }
     #[test]
-    #[should_panic]
-    fn test_astore_3_unimplemented() { let _ = astore_3(&mut make_thread()); }
+    fn test_astore_3_stores_reference_into_slot_3() {
+        let mut t = make_thread();
+        t.thread_stack.push::<Reference>(Reference::new(13));
+        assert!(astore_3(&mut t).is_ok());
+        assert_eq!(t.local_vars.get::<Reference>(3).unwrap().get_ref_index(), 13);
+    }
 
     // ── 0x4f–0x56  array stores ───────────────────────────────────────────────
 
@@ -2924,15 +3789,6 @@ mod tests {
         t.thread_stack.push::<i32>(42);
         assert!(matches!(iastore(&mut t).unwrap_err().downcast_ref::<InstructionError>(), Some(InstructionError::NullPointerException)));
     }
-    #[test]
-    #[should_panic]
-    fn test_iastore_unimplemented() {
-        let mut t = make_thread();
-        t.thread_stack.push(Reference::new(1));
-        t.thread_stack.push::<i32>(0);
-        t.thread_stack.push::<i32>(42);
-        let _ = iastore(&mut t);
-    }
 
     #[test]
     fn test_lastore_null_ref_throws() {
@@ -2941,15 +3797,6 @@ mod tests {
         t.thread_stack.push::<i32>(0);
         t.thread_stack.push::<i64>(42);
         assert!(matches!(lastore(&mut t).unwrap_err().downcast_ref::<InstructionError>(), Some(InstructionError::NullPointerException)));
-    }
-    #[test]
-    #[should_panic]
-    fn test_lastore_unimplemented() {
-        let mut t = make_thread();
-        t.thread_stack.push(Reference::new(1));
-        t.thread_stack.push::<i32>(0);
-        t.thread_stack.push::<i64>(42);
-        let _ = lastore(&mut t);
     }
 
     #[test]
@@ -2960,15 +3807,6 @@ mod tests {
         t.thread_stack.push::<f32>(1.0);
         assert!(matches!(fastore(&mut t).unwrap_err().downcast_ref::<InstructionError>(), Some(InstructionError::NullPointerException)));
     }
-    #[test]
-    #[should_panic]
-    fn test_fastore_unimplemented() {
-        let mut t = make_thread();
-        t.thread_stack.push(Reference::new(1));
-        t.thread_stack.push::<i32>(0);
-        t.thread_stack.push::<f32>(1.0);
-        let _ = fastore(&mut t);
-    }
 
     #[test]
     fn test_dastore_null_ref_throws() {
@@ -2977,15 +3815,6 @@ mod tests {
         t.thread_stack.push::<i32>(0);
         t.thread_stack.push::<f64>(1.0);
         assert!(matches!(dastore(&mut t).unwrap_err().downcast_ref::<InstructionError>(), Some(InstructionError::NullPointerException)));
-    }
-    #[test]
-    #[should_panic]
-    fn test_dastore_unimplemented() {
-        let mut t = make_thread();
-        t.thread_stack.push(Reference::new(1));
-        t.thread_stack.push::<i32>(0);
-        t.thread_stack.push::<f64>(1.0);
-        let _ = dastore(&mut t);
     }
 
     #[test]
@@ -2996,15 +3825,6 @@ mod tests {
         t.thread_stack.push(Reference::new(5));
         assert!(matches!(aastore(&mut t).unwrap_err().downcast_ref::<InstructionError>(), Some(InstructionError::NullPointerException)));
     }
-    #[test]
-    #[should_panic]
-    fn test_aastore_unimplemented() {
-        let mut t = make_thread();
-        t.thread_stack.push(Reference::new(1));
-        t.thread_stack.push::<i32>(0);
-        t.thread_stack.push(Reference::new(5));
-        let _ = aastore(&mut t);
-    }
 
     #[test]
     fn test_bastore_null_ref_throws() {
@@ -3013,15 +3833,6 @@ mod tests {
         t.thread_stack.push::<i32>(0);
         t.thread_stack.push::<i32>(1);
         assert!(matches!(bastore(&mut t).unwrap_err().downcast_ref::<InstructionError>(), Some(InstructionError::NullPointerException)));
-    }
-    #[test]
-    #[should_panic]
-    fn test_bastore_unimplemented() {
-        let mut t = make_thread();
-        t.thread_stack.push(Reference::new(1));
-        t.thread_stack.push::<i32>(0);
-        t.thread_stack.push::<i32>(1);
-        let _ = bastore(&mut t);
     }
 
     #[test]
@@ -3032,15 +3843,6 @@ mod tests {
         t.thread_stack.push::<i32>(65);
         assert!(matches!(castore(&mut t).unwrap_err().downcast_ref::<InstructionError>(), Some(InstructionError::NullPointerException)));
     }
-    #[test]
-    #[should_panic]
-    fn test_castore_unimplemented() {
-        let mut t = make_thread();
-        t.thread_stack.push(Reference::new(1));
-        t.thread_stack.push::<i32>(0);
-        t.thread_stack.push::<i32>(65);
-        let _ = castore(&mut t);
-    }
 
     #[test]
     fn test_sastore_null_ref_throws() {
@@ -3049,15 +3851,6 @@ mod tests {
         t.thread_stack.push::<i32>(0);
         t.thread_stack.push::<i32>(100);
         assert!(matches!(sastore(&mut t).unwrap_err().downcast_ref::<InstructionError>(), Some(InstructionError::NullPointerException)));
-    }
-    #[test]
-    #[should_panic]
-    fn test_sastore_unimplemented() {
-        let mut t = make_thread();
-        t.thread_stack.push(Reference::new(1));
-        t.thread_stack.push::<i32>(0);
-        t.thread_stack.push::<i32>(100);
-        let _ = sastore(&mut t);
     }
 
     // ── 0x57  pop ─────────────────────────────────────────────────────────────
@@ -3094,62 +3887,106 @@ mod tests {
     }
 
     // ── 0x59–0x5e  dup variants ───────────────────────────────────────────────
+    // All dup variants operate on single-slot (category 1) values.
+    // ThreadStack is raw bytes, so i32 and Reference are both 4 bytes and
+    // interchangeable at the byte level in these tests.
+    //
+    // JVM spec stack notation (bottom → top):
 
+    // dup: ..., v → ..., v, v
     #[test]
-    #[should_panic]
-    fn test_dup_unimplemented() {
+    fn test_dup_duplicates_top_value() {
         let mut t = make_thread();
-        t.thread_stack.push(Reference::new(1));
-        let _ = dup(&mut t);
+        t.thread_stack.push::<i32>(42);
+        assert!(dup(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 42);
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 42);
+        assert!(t.thread_stack.pop::<i32>().is_none());
     }
 
     #[test]
-    #[should_panic]
-    fn test_dup_x1_unimplemented() {
+    fn test_dup_empty_stack_returns_internal_error() {
         let mut t = make_thread();
-        t.thread_stack.push(Reference::new(1));
-        t.thread_stack.push(Reference::new(2));
-        let _ = dup_x1(&mut t);
+        assert!(matches!(
+            dup(&mut t).unwrap_err().downcast_ref::<InstructionError>(),
+            Some(InstructionError::InternalError)
+        ));
     }
 
+    // dup_x1: ..., v2, v1 → ..., v1, v2, v1
     #[test]
-    #[should_panic]
-    fn test_dup_x2_unimplemented() {
+    fn test_dup_x1_inserts_copy_below_second_value() {
         let mut t = make_thread();
-        t.thread_stack.push(Reference::new(1));
-        t.thread_stack.push(Reference::new(2));
-        t.thread_stack.push(Reference::new(3));
-        let _ = dup_x2(&mut t);
+        t.thread_stack.push::<i32>(2); // v2
+        t.thread_stack.push::<i32>(1); // v1 (top)
+        assert!(dup_x1(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 1); // top
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 2);
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 1); // deepest copy
+        assert!(t.thread_stack.pop::<i32>().is_none());
     }
 
+    // dup_x2 (form 1: three category-1 values): ..., v3, v2, v1 → ..., v1, v3, v2, v1
     #[test]
-    #[should_panic]
-    fn test_dup2_unimplemented() {
+    fn test_dup_x2_inserts_copy_below_third_value() {
         let mut t = make_thread();
-        t.thread_stack.push(Reference::new(1));
-        t.thread_stack.push(Reference::new(2));
-        let _ = dup2(&mut t);
+        t.thread_stack.push::<i32>(3); // v3
+        t.thread_stack.push::<i32>(2); // v2
+        t.thread_stack.push::<i32>(1); // v1 (top)
+        assert!(dup_x2(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 1);
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 2);
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 3);
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 1);
+        assert!(t.thread_stack.pop::<i32>().is_none());
     }
 
+    // dup2 (form 1: two category-1 values): ..., v2, v1 → ..., v2, v1, v2, v1
     #[test]
-    #[should_panic]
-    fn test_dup2_x1_unimplemented() {
+    fn test_dup2_duplicates_top_two_values() {
         let mut t = make_thread();
-        t.thread_stack.push(Reference::new(1));
-        t.thread_stack.push(Reference::new(2));
-        t.thread_stack.push(Reference::new(3));
-        let _ = dup2_x1(&mut t);
+        t.thread_stack.push::<i32>(2); // v2
+        t.thread_stack.push::<i32>(1); // v1 (top)
+        assert!(dup2(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 1);
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 2);
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 1);
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 2);
+        assert!(t.thread_stack.pop::<i32>().is_none());
     }
 
+    // dup2_x1 (form 1): ..., v3, v2, v1 → ..., v2, v1, v3, v2, v1
     #[test]
-    #[should_panic]
-    fn test_dup2_x2_unimplemented() {
+    fn test_dup2_x1_inserts_two_copies_below_third_value() {
         let mut t = make_thread();
-        t.thread_stack.push(Reference::new(1));
-        t.thread_stack.push(Reference::new(2));
-        t.thread_stack.push(Reference::new(3));
-        t.thread_stack.push(Reference::new(4));
-        let _ = dup2_x2(&mut t);
+        t.thread_stack.push::<i32>(3); // v3
+        t.thread_stack.push::<i32>(2); // v2
+        t.thread_stack.push::<i32>(1); // v1 (top)
+        assert!(dup2_x1(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 1);
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 2);
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 3);
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 1);
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 2);
+        assert!(t.thread_stack.pop::<i32>().is_none());
+    }
+
+    // dup2_x2 (form 1): ..., v4, v3, v2, v1 → ..., v2, v1, v4, v3, v2, v1
+    #[test]
+    fn test_dup2_x2_inserts_two_copies_below_fourth_value() {
+        let mut t = make_thread();
+        t.thread_stack.push::<i32>(4); // v4
+        t.thread_stack.push::<i32>(3); // v3
+        t.thread_stack.push::<i32>(2); // v2
+        t.thread_stack.push::<i32>(1); // v1 (top)
+        assert!(dup2_x2(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 1);
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 2);
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 3);
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 4);
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 1);
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 2);
+        assert!(t.thread_stack.pop::<i32>().is_none());
     }
 
     // ── 0x5f  swap ────────────────────────────────────────────────────────────
@@ -3171,120 +4008,157 @@ mod tests {
     }
 
     // ── 0x60–0x63  add ────────────────────────────────────────────────────────
+    // JVM integer arithmetic is modulo 2^32/2^64 (wrapping).
+    // Float/double follow IEEE 754.
 
     #[test]
-    #[should_panic]
-    fn test_iadd_unimplemented() {
+    fn test_iadd_adds_two_ints() {
         let mut t = make_thread();
+        t.thread_stack.push::<i32>(3); // value1
+        t.thread_stack.push::<i32>(4); // value2
+        assert!(iadd(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 7);
+    }
+    #[test]
+    fn test_iadd_wraps_on_overflow() {
+        let mut t = make_thread();
+        t.thread_stack.push::<i32>(i32::MAX);
         t.thread_stack.push::<i32>(1);
-        t.thread_stack.push::<i32>(2);
-        let _ = iadd(&mut t);
+        assert!(iadd(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), i32::MIN);
     }
 
     #[test]
-    #[should_panic]
-    fn test_ladd_unimplemented() {
+    fn test_ladd_adds_two_longs() {
         let mut t = make_thread();
+        t.thread_stack.push::<i64>(100i64);
+        t.thread_stack.push::<i64>(200i64);
+        assert!(ladd(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i64>().unwrap(), 300i64);
+    }
+    #[test]
+    fn test_ladd_wraps_on_overflow() {
+        let mut t = make_thread();
+        t.thread_stack.push::<i64>(i64::MAX);
         t.thread_stack.push::<i64>(1);
-        t.thread_stack.push::<i64>(2);
-        let _ = ladd(&mut t);
+        assert!(ladd(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i64>().unwrap(), i64::MIN);
     }
 
     #[test]
-    #[should_panic]
-    fn test_fadd_unimplemented() {
+    fn test_fadd_adds_two_floats() {
         let mut t = make_thread();
-        t.thread_stack.push::<f32>(1.0);
-        t.thread_stack.push::<f32>(2.0);
-        let _ = fadd(&mut t);
+        t.thread_stack.push::<f32>(1.5f32);
+        t.thread_stack.push::<f32>(2.5f32);
+        assert!(fadd(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<f32>().unwrap(), 4.0f32);
     }
 
     #[test]
-    #[should_panic]
-    fn test_dadd_unimplemented() {
+    fn test_dadd_adds_two_doubles() {
         let mut t = make_thread();
-        t.thread_stack.push::<f64>(1.0);
-        t.thread_stack.push::<f64>(2.0);
-        let _ = dadd(&mut t);
+        t.thread_stack.push::<f64>(1.5f64);
+        t.thread_stack.push::<f64>(2.5f64);
+        assert!(dadd(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<f64>().unwrap(), 4.0f64);
     }
 
     // ── 0x64–0x67  sub ────────────────────────────────────────────────────────
+    // Result = value1 − value2  (value2 is on top of stack).
 
     #[test]
-    #[should_panic]
-    fn test_isub_unimplemented() {
+    fn test_isub_subtracts_top_from_second() {
         let mut t = make_thread();
-        t.thread_stack.push::<i32>(5);
-        t.thread_stack.push::<i32>(3);
-        let _ = isub(&mut t);
+        t.thread_stack.push::<i32>(10); // value1
+        t.thread_stack.push::<i32>(3);  // value2 (top)
+        assert!(isub(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 7);
+    }
+    #[test]
+    fn test_isub_wraps_on_underflow() {
+        let mut t = make_thread();
+        t.thread_stack.push::<i32>(i32::MIN);
+        t.thread_stack.push::<i32>(1);
+        assert!(isub(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), i32::MAX);
     }
 
     #[test]
-    #[should_panic]
-    fn test_lsub_unimplemented() {
+    fn test_lsub_subtracts_longs() {
         let mut t = make_thread();
-        t.thread_stack.push::<i64>(5);
-        t.thread_stack.push::<i64>(3);
-        let _ = lsub(&mut t);
+        t.thread_stack.push::<i64>(50i64);
+        t.thread_stack.push::<i64>(20i64);
+        assert!(lsub(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i64>().unwrap(), 30i64);
     }
 
     #[test]
-    #[should_panic]
-    fn test_fsub_unimplemented() {
+    fn test_fsub_subtracts_floats() {
         let mut t = make_thread();
-        t.thread_stack.push::<f32>(5.0);
-        t.thread_stack.push::<f32>(3.0);
-        let _ = fsub(&mut t);
+        t.thread_stack.push::<f32>(5.5f32);
+        t.thread_stack.push::<f32>(2.5f32);
+        assert!(fsub(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<f32>().unwrap(), 3.0f32);
     }
 
     #[test]
-    #[should_panic]
-    fn test_dsub_unimplemented() {
+    fn test_dsub_subtracts_doubles() {
         let mut t = make_thread();
-        t.thread_stack.push::<f64>(5.0);
-        t.thread_stack.push::<f64>(3.0);
-        let _ = dsub(&mut t);
+        t.thread_stack.push::<f64>(5.5f64);
+        t.thread_stack.push::<f64>(2.5f64);
+        assert!(dsub(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<f64>().unwrap(), 3.0f64);
     }
 
     // ── 0x68–0x6b  mul ────────────────────────────────────────────────────────
 
     #[test]
-    #[should_panic]
-    fn test_imul_unimplemented() {
+    fn test_imul_multiplies_two_ints() {
         let mut t = make_thread();
-        t.thread_stack.push::<i32>(3);
-        t.thread_stack.push::<i32>(4);
-        let _ = imul(&mut t);
+        t.thread_stack.push::<i32>(6);
+        t.thread_stack.push::<i32>(7);
+        assert!(imul(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 42);
+    }
+    #[test]
+    fn test_imul_wraps_on_overflow() {
+        let mut t = make_thread();
+        t.thread_stack.push::<i32>(i32::MAX);
+        t.thread_stack.push::<i32>(2);
+        assert!(imul(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), -2);
     }
 
     #[test]
-    #[should_panic]
-    fn test_lmul_unimplemented() {
+    fn test_lmul_multiplies_two_longs() {
         let mut t = make_thread();
-        t.thread_stack.push::<i64>(3);
-        t.thread_stack.push::<i64>(4);
-        let _ = lmul(&mut t);
+        t.thread_stack.push::<i64>(1_000_000i64);
+        t.thread_stack.push::<i64>(1_000_000i64);
+        assert!(lmul(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i64>().unwrap(), 1_000_000_000_000i64);
     }
 
     #[test]
-    #[should_panic]
-    fn test_fmul_unimplemented() {
+    fn test_fmul_multiplies_two_floats() {
         let mut t = make_thread();
-        t.thread_stack.push::<f32>(3.0);
-        t.thread_stack.push::<f32>(4.0);
-        let _ = fmul(&mut t);
+        t.thread_stack.push::<f32>(3.0f32);
+        t.thread_stack.push::<f32>(4.0f32);
+        assert!(fmul(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<f32>().unwrap(), 12.0f32);
     }
 
     #[test]
-    #[should_panic]
-    fn test_dmul_unimplemented() {
+    fn test_dmul_multiplies_two_doubles() {
         let mut t = make_thread();
-        t.thread_stack.push::<f64>(3.0);
-        t.thread_stack.push::<f64>(4.0);
-        let _ = dmul(&mut t);
+        t.thread_stack.push::<f64>(2.5f64);
+        t.thread_stack.push::<f64>(4.0f64);
+        assert!(dmul(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<f64>().unwrap(), 10.0f64);
     }
 
     // ── 0x6c–0x6f  div ────────────────────────────────────────────────────────
+    // Integer division truncates toward zero and throws ArithmeticException on
+    // divide-by-zero.  Float/double follow IEEE 754 (no exception on /0).
 
     #[test]
     fn test_idiv_by_zero_returns_arithmetic_exception() {
@@ -3295,12 +4169,21 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
-    fn test_idiv_nonzero_unimplemented() {
+    fn test_idiv_truncates_toward_zero() {
         let mut t = make_thread();
-        t.thread_stack.push::<i32>(10);
+        t.thread_stack.push::<i32>(7);  // value1
+        t.thread_stack.push::<i32>(2);  // value2
+        assert!(idiv(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 3);
+    }
+
+    #[test]
+    fn test_idiv_negative_truncates_toward_zero() {
+        let mut t = make_thread();
+        t.thread_stack.push::<i32>(-7);
         t.thread_stack.push::<i32>(2);
-        let _ = idiv(&mut t);
+        assert!(idiv(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), -3);
     }
 
     #[test]
@@ -3312,33 +4195,43 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
-    fn test_ldiv_nonzero_unimplemented() {
+    fn test_ldiv_divides_longs() {
         let mut t = make_thread();
-        t.thread_stack.push::<i64>(10);
-        t.thread_stack.push::<i64>(2);
-        let _ = ldiv(&mut t);
+        t.thread_stack.push::<i64>(100i64);
+        t.thread_stack.push::<i64>(4i64);
+        assert!(ldiv(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i64>().unwrap(), 25i64);
     }
 
     #[test]
-    #[should_panic]
-    fn test_fdiv_unimplemented() {
+    fn test_fdiv_divides_floats() {
         let mut t = make_thread();
-        t.thread_stack.push::<f32>(10.0);
-        t.thread_stack.push::<f32>(2.0);
-        let _ = fdiv(&mut t);
+        t.thread_stack.push::<f32>(10.0f32);
+        t.thread_stack.push::<f32>(4.0f32);
+        assert!(fdiv(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<f32>().unwrap(), 2.5f32);
     }
 
     #[test]
-    #[should_panic]
-    fn test_ddiv_unimplemented() {
+    fn test_fdiv_by_zero_produces_infinity() {
         let mut t = make_thread();
-        t.thread_stack.push::<f64>(10.0);
-        t.thread_stack.push::<f64>(2.0);
-        let _ = ddiv(&mut t);
+        t.thread_stack.push::<f32>(1.0f32);
+        t.thread_stack.push::<f32>(0.0f32);
+        assert!(fdiv(&mut t).is_ok());
+        assert!(t.thread_stack.pop::<f32>().unwrap().is_infinite());
+    }
+
+    #[test]
+    fn test_ddiv_divides_doubles() {
+        let mut t = make_thread();
+        t.thread_stack.push::<f64>(10.0f64);
+        t.thread_stack.push::<f64>(4.0f64);
+        assert!(ddiv(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<f64>().unwrap(), 2.5f64);
     }
 
     // ── 0x70–0x73  rem ────────────────────────────────────────────────────────
+    // Integer remainder: result sign matches the dividend.
 
     #[test]
     fn test_irem_by_zero_returns_arithmetic_exception() {
@@ -3349,12 +4242,21 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
-    fn test_irem_nonzero_unimplemented() {
+    fn test_irem_positive_remainder() {
         let mut t = make_thread();
         t.thread_stack.push::<i32>(10);
         t.thread_stack.push::<i32>(3);
-        let _ = irem(&mut t);
+        assert!(irem(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 1);
+    }
+
+    #[test]
+    fn test_irem_negative_dividend_sign_matches_dividend() {
+        let mut t = make_thread();
+        t.thread_stack.push::<i32>(-10);
+        t.thread_stack.push::<i32>(3);
+        assert!(irem(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), -1);
     }
 
     #[test]
@@ -3366,488 +4268,867 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
-    fn test_lrem_nonzero_unimplemented() {
+    fn test_lrem_positive_remainder() {
         let mut t = make_thread();
-        t.thread_stack.push::<i64>(10);
-        t.thread_stack.push::<i64>(3);
-        let _ = lrem(&mut t);
+        t.thread_stack.push::<i64>(17i64);
+        t.thread_stack.push::<i64>(5i64);
+        assert!(lrem(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i64>().unwrap(), 2i64);
     }
 
     #[test]
-    #[should_panic]
-    fn test_frem_unimplemented() {
+    fn test_frem_float_remainder() {
         let mut t = make_thread();
-        t.thread_stack.push::<f32>(10.0);
-        t.thread_stack.push::<f32>(3.0);
-        let _ = frem(&mut t);
+        t.thread_stack.push::<f32>(10.0f32);
+        t.thread_stack.push::<f32>(3.0f32);
+        assert!(frem(&mut t).is_ok());
+        let r = t.thread_stack.pop::<f32>().unwrap();
+        assert!((r - 1.0f32).abs() < 1e-6);
     }
 
     #[test]
-    #[should_panic]
-    fn test_drem_unimplemented() {
+    fn test_drem_double_remainder() {
         let mut t = make_thread();
-        t.thread_stack.push::<f64>(10.0);
-        t.thread_stack.push::<f64>(3.0);
-        let _ = drem(&mut t);
+        t.thread_stack.push::<f64>(10.0f64);
+        t.thread_stack.push::<f64>(3.0f64);
+        assert!(drem(&mut t).is_ok());
+        let r = t.thread_stack.pop::<f64>().unwrap();
+        assert!((r - 1.0f64).abs() < 1e-10);
     }
 
     // ── 0x74–0x77  neg ────────────────────────────────────────────────────────
+    // Arithmetic negation.  Integer MIN_VALUE negated wraps to MIN_VALUE.
 
     #[test]
-    #[should_panic]
-    fn test_ineg_unimplemented() {
+    fn test_ineg_negates_positive_int() {
         let mut t = make_thread();
         t.thread_stack.push::<i32>(5);
-        let _ = ineg(&mut t);
+        assert!(ineg(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), -5);
+    }
+    #[test]
+    fn test_ineg_min_value_wraps() {
+        let mut t = make_thread();
+        t.thread_stack.push::<i32>(i32::MIN);
+        assert!(ineg(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), i32::MIN);
     }
 
     #[test]
-    #[should_panic]
-    fn test_lneg_unimplemented() {
+    fn test_lneg_negates_positive_long() {
         let mut t = make_thread();
-        t.thread_stack.push::<i64>(5);
-        let _ = lneg(&mut t);
+        t.thread_stack.push::<i64>(42i64);
+        assert!(lneg(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i64>().unwrap(), -42i64);
     }
 
     #[test]
-    #[should_panic]
-    fn test_fneg_unimplemented() {
+    fn test_fneg_negates_float() {
         let mut t = make_thread();
-        t.thread_stack.push::<f32>(5.0);
-        let _ = fneg(&mut t);
+        t.thread_stack.push::<f32>(3.0f32);
+        assert!(fneg(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<f32>().unwrap(), -3.0f32);
     }
 
     #[test]
-    #[should_panic]
-    fn test_dneg_unimplemented() {
+    fn test_dneg_negates_double() {
         let mut t = make_thread();
-        t.thread_stack.push::<f64>(5.0);
-        let _ = dneg(&mut t);
+        t.thread_stack.push::<f64>(2.5f64);
+        assert!(dneg(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<f64>().unwrap(), -2.5f64);
     }
 
     // ── 0x78–0x7d  shifts ─────────────────────────────────────────────────────
+    // JVM spec: shift count is masked — int uses low 5 bits, long uses low 6 bits.
+    // value1 is the value to shift; value2 (always int) is the shift amount.
 
+    // ishl: result = value1 << (value2 & 0x1f)
     #[test]
-    #[should_panic]
-    fn test_ishl_unimplemented() {
+    fn test_ishl_shifts_int_left() {
+        let mut t = make_thread();
+        t.thread_stack.push::<i32>(1);  // value1
+        t.thread_stack.push::<i32>(3);  // value2 (shift amount)
+        assert!(ishl(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 8); // 1 << 3
+    }
+    #[test]
+    fn test_ishl_masks_shift_count_to_5_bits() {
         let mut t = make_thread();
         t.thread_stack.push::<i32>(1);
+        t.thread_stack.push::<i32>(33); // 33 & 0x1f = 1
+        assert!(ishl(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 2); // 1 << 1
+    }
+
+    // lshl: result = value1 << (value2 & 0x3f)  (value1 = long, value2 = int)
+    #[test]
+    fn test_lshl_shifts_long_left() {
+        let mut t = make_thread();
+        t.thread_stack.push::<i64>(1i64); // value1 (long)
+        t.thread_stack.push::<i32>(4);    // value2 (int shift amount)
+        assert!(lshl(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i64>().unwrap(), 16i64); // 1 << 4
+    }
+    #[test]
+    fn test_lshl_masks_shift_count_to_6_bits() {
+        let mut t = make_thread();
+        t.thread_stack.push::<i64>(1i64);
+        t.thread_stack.push::<i32>(65); // 65 & 0x3f = 1
+        assert!(lshl(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i64>().unwrap(), 2i64); // 1 << 1
+    }
+
+    // ishr: arithmetic (sign-extending) right shift, value1 >> (value2 & 0x1f)
+    #[test]
+    fn test_ishr_arithmetic_right_shift() {
+        let mut t = make_thread();
+        t.thread_stack.push::<i32>(16); // value1
+        t.thread_stack.push::<i32>(2);  // value2
+        assert!(ishr(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 4); // 16 >> 2
+    }
+    #[test]
+    fn test_ishr_sign_extends_negative_value() {
+        let mut t = make_thread();
+        t.thread_stack.push::<i32>(-16);
         t.thread_stack.push::<i32>(2);
-        let _ = ishl(&mut t);
+        assert!(ishr(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), -4); // sign-preserving
     }
 
+    // lshr: arithmetic right shift for long, value1 >> (value2 & 0x3f)
     #[test]
-    #[should_panic]
-    fn test_lshl_unimplemented() {
+    fn test_lshr_arithmetic_right_shift_long() {
         let mut t = make_thread();
-        t.thread_stack.push::<i64>(1); // value1 (long)
-        t.thread_stack.push::<i32>(2);  // value2 (int shift amount)
-        let _ = lshl(&mut t);
+        t.thread_stack.push::<i64>(64i64); // value1 (long)
+        t.thread_stack.push::<i32>(3);     // value2 (int)
+        assert!(lshr(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i64>().unwrap(), 8i64); // 64 >> 3
+    }
+    #[test]
+    fn test_lshr_sign_extends_negative_long() {
+        let mut t = make_thread();
+        t.thread_stack.push::<i64>(-64i64);
+        t.thread_stack.push::<i32>(3);
+        assert!(lshr(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i64>().unwrap(), -8i64);
     }
 
+    // iushr: logical (zero-filling) right shift, (value1 as u32 >> (value2 & 0x1f)) as i32
     #[test]
-    #[should_panic]
-    fn test_ishr_unimplemented() {
+    fn test_iushr_logical_right_shift_positive() {
         let mut t = make_thread();
-        t.thread_stack.push::<i32>(8);
+        t.thread_stack.push::<i32>(16);
         t.thread_stack.push::<i32>(2);
-        let _ = ishr(&mut t);
+        assert!(iushr(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 4);
+    }
+    #[test]
+    fn test_iushr_fills_with_zeros_for_negative_value() {
+        let mut t = make_thread();
+        t.thread_stack.push::<i32>(-1); // 0xFFFFFFFF
+        t.thread_stack.push::<i32>(28);
+        assert!(iushr(&mut t).is_ok());
+        // 0xFFFF_FFFF >>> 28 = 0x0000_000F = 15 (zero-filled)
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 0x0F);
     }
 
+    // lushr: logical right shift for long, (value1 as u64 >> (value2 & 0x3f)) as i64
     #[test]
-    #[should_panic]
-    fn test_lshr_unimplemented() {
+    fn test_lushr_logical_right_shift_long() {
         let mut t = make_thread();
-        t.thread_stack.push::<i64>(8); // value1 (long)
-        t.thread_stack.push::<i32>(2);  // value2 (int shift amount)
-        let _ = lshr(&mut t);
+        t.thread_stack.push::<i64>(64i64);
+        t.thread_stack.push::<i32>(3);
+        assert!(lushr(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i64>().unwrap(), 8i64);
     }
-
     #[test]
-    #[should_panic]
-    fn test_iushr_unimplemented() {
+    fn test_lushr_fills_with_zeros_for_negative_long() {
         let mut t = make_thread();
-        t.thread_stack.push::<i32>(8);
-        t.thread_stack.push::<i32>(2);
-        let _ = iushr(&mut t);
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_lushr_unimplemented() {
-        let mut t = make_thread();
-        t.thread_stack.push::<i64>(8); // value1 (long)
-        t.thread_stack.push::<i32>(2);  // value2 (int shift amount)
-        let _ = lushr(&mut t);
+        t.thread_stack.push::<i64>(-1i64); // 0xFFFF_FFFF_FFFF_FFFF
+        t.thread_stack.push::<i32>(60);
+        assert!(lushr(&mut t).is_ok());
+        // 0xFFFF...FFFF >>> 60 = 0x0F (zero-filled)
+        assert_eq!(t.thread_stack.pop::<i64>().unwrap(), 0x0Fi64);
     }
 
     // ── 0x7e–0x83  bitwise ────────────────────────────────────────────────────
 
+    // iand: result = value1 & value2
     #[test]
-    #[should_panic]
-    fn test_iand_unimplemented() {
+    fn test_iand_bitwise_and_ints() {
+        let mut t = make_thread();
+        t.thread_stack.push::<i32>(0b1010); // value1
+        t.thread_stack.push::<i32>(0b1100); // value2
+        assert!(iand(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 0b1000);
+    }
+
+    // land: result = value1 & value2 (long)
+    #[test]
+    fn test_land_bitwise_and_longs() {
+        let mut t = make_thread();
+        t.thread_stack.push::<i64>(0b1010i64);
+        t.thread_stack.push::<i64>(0b1100i64);
+        assert!(land(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i64>().unwrap(), 0b1000i64);
+    }
+
+    // ior: result = value1 | value2
+    #[test]
+    fn test_ior_bitwise_or_ints() {
         let mut t = make_thread();
         t.thread_stack.push::<i32>(0b1010);
         t.thread_stack.push::<i32>(0b1100);
-        let _ = iand(&mut t);
+        assert!(ior(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 0b1110);
     }
 
+    // lor: result = value1 | value2 (long)
     #[test]
-    #[should_panic]
-    fn test_land_unimplemented() {
+    fn test_lor_bitwise_or_longs() {
         let mut t = make_thread();
-        t.thread_stack.push::<i64>(0b1010);
-        t.thread_stack.push::<i64>(0b1100);
-        let _ = land(&mut t);
+        t.thread_stack.push::<i64>(0b1010i64);
+        t.thread_stack.push::<i64>(0b1100i64);
+        assert!(lor(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i64>().unwrap(), 0b1110i64);
     }
 
+    // ixor: result = value1 ^ value2
     #[test]
-    #[should_panic]
-    fn test_ior_unimplemented() {
-        let mut t = make_thread();
-        t.thread_stack.push::<i32>(0b1010);
-        t.thread_stack.push::<i32>(0b1100);
-        let _ = ior(&mut t);
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_lor_unimplemented() {
-        let mut t = make_thread();
-        t.thread_stack.push::<i64>(0b1010);
-        t.thread_stack.push::<i64>(0b1100);
-        let _ = lor(&mut t);
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_ixor_unimplemented() {
+    fn test_ixor_bitwise_xor_ints() {
         let mut t = make_thread();
         t.thread_stack.push::<i32>(0b1010);
         t.thread_stack.push::<i32>(0b1100);
-        let _ = ixor(&mut t);
+        assert!(ixor(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 0b0110);
     }
 
+    // lxor: result = value1 ^ value2 (long)
     #[test]
-    #[should_panic]
-    fn test_lxor_unimplemented() {
+    fn test_lxor_bitwise_xor_longs() {
         let mut t = make_thread();
-        t.thread_stack.push::<i64>(0b1010);
-        t.thread_stack.push::<i64>(0b1100);
-        let _ = lxor(&mut t);
+        t.thread_stack.push::<i64>(0b1010i64);
+        t.thread_stack.push::<i64>(0b1100i64);
+        assert!(lxor(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i64>().unwrap(), 0b0110i64);
     }
 
     // ── 0x84  iinc ────────────────────────────────────────────────────────────
+    // Reads a 1-byte local-variable index then a 1-byte signed constant from the
+    // bytecode stream.  Increments local_vars[index] by that constant.
 
     #[test]
-    #[should_panic]
-    fn test_iinc_unimplemented() {
-        let _ = iinc(&mut make_thread());
+    fn test_iinc_increments_local_var_by_positive_const() {
+        let mut t = make_thread_with_code(vec![2, 5]); // index=2, const=+5
+        t.local_vars.set::<i32>(2, 10);
+        assert!(iinc(&mut t).is_ok());
+        assert_eq!(t.local_vars.get::<i32>(2).unwrap(), 15);
+    }
+    #[test]
+    fn test_iinc_decrements_local_var_with_negative_const() {
+        let mut t = make_thread_with_code(vec![0, 0xFF]); // index=0, const=-1 (signed byte)
+        t.local_vars.set::<i32>(0, 100);
+        assert!(iinc(&mut t).is_ok());
+        assert_eq!(t.local_vars.get::<i32>(0).unwrap(), 99);
     }
 
     // ── 0x85–0x93  type conversions ───────────────────────────────────────────
 
+    // i2l: int → long (sign-extending widening conversion)
     #[test]
-    #[should_panic]
-    fn test_i2l_unimplemented() {
+    fn test_i2l_sign_extends_positive_int_to_long() {
         let mut t = make_thread();
-        t.thread_stack.push::<i32>(5);
-        let _ = i2l(&mut t);
+        t.thread_stack.push::<i32>(42);
+        assert!(i2l(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i64>().unwrap(), 42i64);
+    }
+    #[test]
+    fn test_i2l_sign_extends_negative_int_to_long() {
+        let mut t = make_thread();
+        t.thread_stack.push::<i32>(-1);
+        assert!(i2l(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i64>().unwrap(), -1i64);
     }
 
+    // i2f: int → float (widening; may lose precision for large values)
     #[test]
-    #[should_panic]
-    fn test_i2f_unimplemented() {
+    fn test_i2f_converts_int_to_float() {
         let mut t = make_thread();
-        t.thread_stack.push::<i32>(5);
-        let _ = i2f(&mut t);
+        t.thread_stack.push::<i32>(100);
+        assert!(i2f(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<f32>().unwrap(), 100.0f32);
     }
 
+    // i2d: int → double (widening; always exact for 32-bit int)
     #[test]
-    #[should_panic]
-    fn test_i2d_unimplemented() {
+    fn test_i2d_converts_int_to_double() {
         let mut t = make_thread();
-        t.thread_stack.push::<i32>(5);
-        let _ = i2d(&mut t);
+        t.thread_stack.push::<i32>(100);
+        assert!(i2d(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<f64>().unwrap(), 100.0f64);
     }
 
+    // l2i: long → int (truncates to low 32 bits)
     #[test]
-    #[should_panic]
-    fn test_l2i_unimplemented() {
+    fn test_l2i_truncates_long_to_low_32_bits() {
         let mut t = make_thread();
-        t.thread_stack.push::<i64>(5);
-        let _ = l2i(&mut t);
+        t.thread_stack.push::<i64>(0x1_0000_0005i64); // high bits are discarded
+        assert!(l2i(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 5);
+    }
+    #[test]
+    fn test_l2i_converts_simple_long_to_int() {
+        let mut t = make_thread();
+        t.thread_stack.push::<i64>(42i64);
+        assert!(l2i(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 42);
     }
 
+    // l2f: long → float (widening; may lose precision)
     #[test]
-    #[should_panic]
-    fn test_l2f_unimplemented() {
+    fn test_l2f_converts_long_to_float() {
         let mut t = make_thread();
-        t.thread_stack.push::<i64>(5);
-        let _ = l2f(&mut t);
+        t.thread_stack.push::<i64>(10i64);
+        assert!(l2f(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<f32>().unwrap(), 10.0f32);
     }
 
+    // l2d: long → double (widening; may lose precision for very large values)
     #[test]
-    #[should_panic]
-    fn test_l2d_unimplemented() {
+    fn test_l2d_converts_long_to_double() {
         let mut t = make_thread();
-        t.thread_stack.push::<i64>(5);
-        let _ = l2d(&mut t);
+        t.thread_stack.push::<i64>(10i64);
+        assert!(l2d(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<f64>().unwrap(), 10.0f64);
     }
 
+    // f2i: float → int  (truncate toward zero; NaN → 0; overflow clamps to MAX/MIN)
     #[test]
-    #[should_panic]
-    fn test_f2i_unimplemented() {
+    fn test_f2i_truncates_float_toward_zero() {
         let mut t = make_thread();
-        t.thread_stack.push::<f32>(5.0);
-        let _ = f2i(&mut t);
+        t.thread_stack.push::<f32>(3.9f32);
+        assert!(f2i(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 3);
+    }
+    #[test]
+    fn test_f2i_nan_becomes_zero() {
+        let mut t = make_thread();
+        t.thread_stack.push::<f32>(f32::NAN);
+        assert!(f2i(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 0);
+    }
+    #[test]
+    fn test_f2i_positive_infinity_clamps_to_max_int() {
+        let mut t = make_thread();
+        t.thread_stack.push::<f32>(f32::INFINITY);
+        assert!(f2i(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), i32::MAX);
+    }
+    #[test]
+    fn test_f2i_negative_infinity_clamps_to_min_int() {
+        let mut t = make_thread();
+        t.thread_stack.push::<f32>(f32::NEG_INFINITY);
+        assert!(f2i(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), i32::MIN);
     }
 
+    // f2l: float → long  (truncate toward zero; NaN → 0; overflow clamps)
     #[test]
-    #[should_panic]
-    fn test_f2l_unimplemented() {
+    fn test_f2l_truncates_float_to_long() {
         let mut t = make_thread();
-        t.thread_stack.push::<f32>(5.0);
-        let _ = f2l(&mut t);
+        t.thread_stack.push::<f32>(5.9f32);
+        assert!(f2l(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i64>().unwrap(), 5i64);
+    }
+    #[test]
+    fn test_f2l_nan_becomes_zero() {
+        let mut t = make_thread();
+        t.thread_stack.push::<f32>(f32::NAN);
+        assert!(f2l(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i64>().unwrap(), 0i64);
     }
 
+    // f2d: float → double (widening; always exact)
     #[test]
-    #[should_panic]
-    fn test_f2d_unimplemented() {
+    fn test_f2d_widens_float_to_double() {
         let mut t = make_thread();
-        t.thread_stack.push::<f32>(5.0);
-        let _ = f2d(&mut t);
+        t.thread_stack.push::<f32>(1.5f32);
+        assert!(f2d(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<f64>().unwrap(), 1.5f64);
     }
 
+    // d2i: double → int  (truncate toward zero; NaN → 0; overflow clamps)
     #[test]
-    #[should_panic]
-    fn test_d2i_unimplemented() {
+    fn test_d2i_truncates_double_toward_zero() {
         let mut t = make_thread();
-        t.thread_stack.push::<f64>(5.0);
-        let _ = d2i(&mut t);
+        t.thread_stack.push::<f64>(7.9f64);
+        assert!(d2i(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 7);
+    }
+    #[test]
+    fn test_d2i_nan_becomes_zero() {
+        let mut t = make_thread();
+        t.thread_stack.push::<f64>(f64::NAN);
+        assert!(d2i(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 0);
     }
 
+    // d2l: double → long  (truncate toward zero; NaN → 0; overflow clamps)
     #[test]
-    #[should_panic]
-    fn test_d2l_unimplemented() {
+    fn test_d2l_truncates_double_to_long() {
         let mut t = make_thread();
-        t.thread_stack.push::<f64>(5.0);
-        let _ = d2l(&mut t);
+        t.thread_stack.push::<f64>(9.9f64);
+        assert!(d2l(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i64>().unwrap(), 9i64);
+    }
+    #[test]
+    fn test_d2l_nan_becomes_zero() {
+        let mut t = make_thread();
+        t.thread_stack.push::<f64>(f64::NAN);
+        assert!(d2l(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i64>().unwrap(), 0i64);
     }
 
+    // d2f: double → float (narrowing; may lose precision)
     #[test]
-    #[should_panic]
-    fn test_d2f_unimplemented() {
+    fn test_d2f_narrows_double_to_float() {
         let mut t = make_thread();
-        t.thread_stack.push::<f64>(5.0);
-        let _ = d2f(&mut t);
+        t.thread_stack.push::<f64>(1.5f64);
+        assert!(d2f(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<f32>().unwrap(), 1.5f32);
     }
 
+    // i2b: int → byte (sign-extend low 8 bits); result pushed as int
     #[test]
-    #[should_panic]
-    fn test_i2b_unimplemented() {
+    fn test_i2b_sign_extends_to_byte() {
         let mut t = make_thread();
-        t.thread_stack.push::<i32>(5);
-        let _ = i2b(&mut t);
+        t.thread_stack.push::<i32>(0x1FF); // low 8 bits = 0xFF = -1 as signed byte
+        assert!(i2b(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), -1);
+    }
+    #[test]
+    fn test_i2b_positive_byte_remains_positive() {
+        let mut t = make_thread();
+        t.thread_stack.push::<i32>(0x105); // low 8 bits = 5
+        assert!(i2b(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 5);
     }
 
+    // i2c: int → char (zero-extend low 16 bits); result pushed as int
     #[test]
-    #[should_panic]
-    fn test_i2c_unimplemented() {
+    fn test_i2c_zero_extends_to_char_range() {
         let mut t = make_thread();
-        t.thread_stack.push::<i32>(65);
-        let _ = i2c(&mut t);
+        t.thread_stack.push::<i32>(0x1_0041); // low 16 bits = 0x0041 = 65 ('A')
+        assert!(i2c(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 65);
+    }
+    #[test]
+    fn test_i2c_negative_int_zero_extends_low_16_bits() {
+        let mut t = make_thread();
+        t.thread_stack.push::<i32>(-1); // 0xFFFFFFFF; low 16 = 0xFFFF = 65535
+        assert!(i2c(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 65535);
     }
 
+    // i2s: int → short (sign-extend low 16 bits); result pushed as int
     #[test]
-    #[should_panic]
-    fn test_i2s_unimplemented() {
+    fn test_i2s_sign_extends_to_short() {
         let mut t = make_thread();
-        t.thread_stack.push::<i32>(5);
-        let _ = i2s(&mut t);
+        t.thread_stack.push::<i32>(0x1_8000); // low 16 bits = 0x8000 = -32768 as signed short
+        assert!(i2s(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), -32768);
+    }
+    #[test]
+    fn test_i2s_positive_short_remains_positive() {
+        let mut t = make_thread();
+        t.thread_stack.push::<i32>(0x1_0064); // low 16 bits = 100
+        assert!(i2s(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 100);
     }
 
     // ── 0x94–0x98  comparisons ────────────────────────────────────────────────
+    // Pushes int result: 0 if equal, 1 if value1 > value2, -1 if value1 < value2.
+    // fcmpl/dcmpl: NaN comparison → -1
+    // fcmpg/dcmpg: NaN comparison → +1
 
+    // lcmp
     #[test]
-    #[should_panic]
-    fn test_lcmp_unimplemented() {
+    fn test_lcmp_equal_longs_push_zero() {
         let mut t = make_thread();
-        t.thread_stack.push::<i64>(1);
-        t.thread_stack.push::<i64>(2);
-        let _ = lcmp(&mut t);
+        t.thread_stack.push::<i64>(5i64); // value1
+        t.thread_stack.push::<i64>(5i64); // value2
+        assert!(lcmp(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 0);
+    }
+    #[test]
+    fn test_lcmp_value1_greater_pushes_one() {
+        let mut t = make_thread();
+        t.thread_stack.push::<i64>(10i64);
+        t.thread_stack.push::<i64>(5i64);
+        assert!(lcmp(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 1);
+    }
+    #[test]
+    fn test_lcmp_value1_less_pushes_minus_one() {
+        let mut t = make_thread();
+        t.thread_stack.push::<i64>(2i64);
+        t.thread_stack.push::<i64>(5i64);
+        assert!(lcmp(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), -1);
     }
 
+    // fcmpl: NaN → -1
     #[test]
-    #[should_panic]
-    fn test_fcmpl_unimplemented() {
+    fn test_fcmpl_equal_floats_push_zero() {
         let mut t = make_thread();
-        t.thread_stack.push::<f32>(1.0);
-        t.thread_stack.push::<f32>(2.0);
-        let _ = fcmpl(&mut t);
+        t.thread_stack.push::<f32>(3.0f32);
+        t.thread_stack.push::<f32>(3.0f32);
+        assert!(fcmpl(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 0);
+    }
+    #[test]
+    fn test_fcmpl_value1_greater_pushes_one() {
+        let mut t = make_thread();
+        t.thread_stack.push::<f32>(5.0f32);
+        t.thread_stack.push::<f32>(3.0f32);
+        assert!(fcmpl(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 1);
+    }
+    #[test]
+    fn test_fcmpl_nan_pushes_minus_one() {
+        let mut t = make_thread();
+        t.thread_stack.push::<f32>(f32::NAN);
+        t.thread_stack.push::<f32>(1.0f32);
+        assert!(fcmpl(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), -1);
     }
 
+    // fcmpg: NaN → +1
     #[test]
-    #[should_panic]
-    fn test_fcmpg_unimplemented() {
+    fn test_fcmpg_equal_floats_push_zero() {
         let mut t = make_thread();
-        t.thread_stack.push::<f32>(1.0);
-        t.thread_stack.push::<f32>(2.0);
-        let _ = fcmpg(&mut t);
+        t.thread_stack.push::<f32>(3.0f32);
+        t.thread_stack.push::<f32>(3.0f32);
+        assert!(fcmpg(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 0);
+    }
+    #[test]
+    fn test_fcmpg_nan_pushes_positive_one() {
+        let mut t = make_thread();
+        t.thread_stack.push::<f32>(f32::NAN);
+        t.thread_stack.push::<f32>(1.0f32);
+        assert!(fcmpg(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 1);
     }
 
+    // dcmpl: NaN → -1
     #[test]
-    #[should_panic]
-    fn test_dcmpl_unimplemented() {
+    fn test_dcmpl_equal_doubles_push_zero() {
         let mut t = make_thread();
-        t.thread_stack.push::<f64>(1.0);
-        t.thread_stack.push::<f64>(2.0);
-        let _ = dcmpl(&mut t);
+        t.thread_stack.push::<f64>(2.0f64);
+        t.thread_stack.push::<f64>(2.0f64);
+        assert!(dcmpl(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 0);
+    }
+    #[test]
+    fn test_dcmpl_nan_pushes_minus_one() {
+        let mut t = make_thread();
+        t.thread_stack.push::<f64>(f64::NAN);
+        t.thread_stack.push::<f64>(1.0f64);
+        assert!(dcmpl(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), -1);
     }
 
+    // dcmpg: NaN → +1
     #[test]
-    #[should_panic]
-    fn test_dcmpg_unimplemented() {
+    fn test_dcmpg_equal_doubles_push_zero() {
         let mut t = make_thread();
-        t.thread_stack.push::<f64>(1.0);
-        t.thread_stack.push::<f64>(2.0);
-        let _ = dcmpg(&mut t);
+        t.thread_stack.push::<f64>(2.0f64);
+        t.thread_stack.push::<f64>(2.0f64);
+        assert!(dcmpg(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 0);
+    }
+    #[test]
+    fn test_dcmpg_nan_pushes_positive_one() {
+        let mut t = make_thread();
+        t.thread_stack.push::<f64>(f64::NAN);
+        t.thread_stack.push::<f64>(1.0f64);
+        assert!(dcmpg(&mut t).is_ok());
+        assert_eq!(t.thread_stack.pop::<i32>().unwrap(), 1);
     }
 
     // ── 0x99–0xa6  branches ───────────────────────────────────────────────────
+    // Convention: use make_thread_at_pc(1, code) so the opcode sits at address 0
+    // (already consumed by dispatch).  The two offset bytes are at code[1..=2].
+    //
+    //   target       = opcode_address + branchoffset
+    //                = (pc_at_entry - 1) + branchoffset
+    //                = 0 + branchoffset  (when pc_at_entry == 1)
+    //
+    // code layout used: [0x00, offset_hi, offset_lo]
+    //   branch taken  → pc == branchoffset (== 10 with offset 0x000A)
+    //   fall through  → pc == 3  (1 + 2 offset bytes consumed)
 
+    // ifeq: branch if value == 0
     #[test]
-    #[should_panic]
-    fn test_ifeq_unimplemented() { let _ = ifeq(&mut make_thread()); }
+    fn test_ifeq_branches_when_zero() {
+        let mut t = make_thread_at_pc(1, vec![0x00, 0x00, 0x0A]); // offset = 10
+        t.thread_stack.push::<i32>(0);
+        assert!(ifeq(&mut t).is_ok());
+        assert_eq!(t.pc, 10);
+    }
     #[test]
-    #[should_panic]
-    fn test_ifne_unimplemented() { let _ = ifne(&mut make_thread()); }
-    #[test]
-    #[should_panic]
-    fn test_iflt_unimplemented() { let _ = iflt(&mut make_thread()); }
-    #[test]
-    #[should_panic]
-    fn test_ifge_unimplemented() { let _ = ifge(&mut make_thread()); }
-    #[test]
-    #[should_panic]
-    fn test_ifgt_unimplemented() { let _ = ifgt(&mut make_thread()); }
-    #[test]
-    #[should_panic]
-    fn test_ifle_unimplemented() { let _ = ifle(&mut make_thread()); }
+    fn test_ifeq_falls_through_when_nonzero() {
+        let mut t = make_thread_at_pc(1, vec![0x00, 0x00, 0x0A]);
+        t.thread_stack.push::<i32>(1);
+        assert!(ifeq(&mut t).is_ok());
+        assert_eq!(t.pc, 3);
+    }
 
+    // ifne: branch if value != 0
     #[test]
-    #[should_panic]
-    fn test_if_icmpeq_unimplemented() { let _ = if_icmpeq(&mut make_thread()); }
+    fn test_ifne_branches_when_nonzero() {
+        let mut t = make_thread_at_pc(1, vec![0x00, 0x00, 0x0A]);
+        t.thread_stack.push::<i32>(5);
+        assert!(ifne(&mut t).is_ok());
+        assert_eq!(t.pc, 10);
+    }
     #[test]
-    #[should_panic]
-    fn test_if_icmpne_unimplemented() { let _ = if_icmpne(&mut make_thread()); }
-    #[test]
-    #[should_panic]
-    fn test_if_icmplt_unimplemented() { let _ = if_icmplt(&mut make_thread()); }
-    #[test]
-    #[should_panic]
-    fn test_if_icmpge_unimplemented() { let _ = if_icmpge(&mut make_thread()); }
-    #[test]
-    #[should_panic]
-    fn test_if_icmpgt_unimplemented() { let _ = if_icmpgt(&mut make_thread()); }
-    #[test]
-    #[should_panic]
-    fn test_if_icmple_unimplemented() { let _ = if_icmple(&mut make_thread()); }
+    fn test_ifne_falls_through_when_zero() {
+        let mut t = make_thread_at_pc(1, vec![0x00, 0x00, 0x0A]);
+        t.thread_stack.push::<i32>(0);
+        assert!(ifne(&mut t).is_ok());
+        assert_eq!(t.pc, 3);
+    }
 
+    // iflt: branch if value < 0
     #[test]
-    #[should_panic]
-    fn test_if_acmpeq_unimplemented() { let _ = if_acmpeq(&mut make_thread()); }
+    fn test_iflt_branches_when_negative() {
+        let mut t = make_thread_at_pc(1, vec![0x00, 0x00, 0x0A]);
+        t.thread_stack.push::<i32>(-1);
+        assert!(iflt(&mut t).is_ok());
+        assert_eq!(t.pc, 10);
+    }
     #[test]
-    #[should_panic]
-    fn test_if_acmpne_unimplemented() { let _ = if_acmpne(&mut make_thread()); }
+    fn test_iflt_falls_through_when_nonnegative() {
+        let mut t = make_thread_at_pc(1, vec![0x00, 0x00, 0x0A]);
+        t.thread_stack.push::<i32>(0);
+        assert!(iflt(&mut t).is_ok());
+        assert_eq!(t.pc, 3);
+    }
+
+    // ifge: branch if value >= 0
+    #[test]
+    fn test_ifge_branches_when_nonnegative() {
+        let mut t = make_thread_at_pc(1, vec![0x00, 0x00, 0x0A]);
+        t.thread_stack.push::<i32>(0);
+        assert!(ifge(&mut t).is_ok());
+        assert_eq!(t.pc, 10);
+    }
+    #[test]
+    fn test_ifge_falls_through_when_negative() {
+        let mut t = make_thread_at_pc(1, vec![0x00, 0x00, 0x0A]);
+        t.thread_stack.push::<i32>(-1);
+        assert!(ifge(&mut t).is_ok());
+        assert_eq!(t.pc, 3);
+    }
+
+    // ifgt: branch if value > 0
+    #[test]
+    fn test_ifgt_branches_when_positive() {
+        let mut t = make_thread_at_pc(1, vec![0x00, 0x00, 0x0A]);
+        t.thread_stack.push::<i32>(1);
+        assert!(ifgt(&mut t).is_ok());
+        assert_eq!(t.pc, 10);
+    }
+    #[test]
+    fn test_ifgt_falls_through_when_nonpositive() {
+        let mut t = make_thread_at_pc(1, vec![0x00, 0x00, 0x0A]);
+        t.thread_stack.push::<i32>(0);
+        assert!(ifgt(&mut t).is_ok());
+        assert_eq!(t.pc, 3);
+    }
+
+    // ifle: branch if value <= 0
+    #[test]
+    fn test_ifle_branches_when_nonpositive() {
+        let mut t = make_thread_at_pc(1, vec![0x00, 0x00, 0x0A]);
+        t.thread_stack.push::<i32>(0);
+        assert!(ifle(&mut t).is_ok());
+        assert_eq!(t.pc, 10);
+    }
+    #[test]
+    fn test_ifle_falls_through_when_positive() {
+        let mut t = make_thread_at_pc(1, vec![0x00, 0x00, 0x0A]);
+        t.thread_stack.push::<i32>(1);
+        assert!(ifle(&mut t).is_ok());
+        assert_eq!(t.pc, 3);
+    }
+
+    // if_icmpeq: branch if value1 == value2
+    #[test]
+    fn test_if_icmpeq_branches_when_equal() {
+        let mut t = make_thread_at_pc(1, vec![0x00, 0x00, 0x0A]);
+        t.thread_stack.push::<i32>(5); // value1
+        t.thread_stack.push::<i32>(5); // value2
+        assert!(if_icmpeq(&mut t).is_ok());
+        assert_eq!(t.pc, 10);
+    }
+    #[test]
+    fn test_if_icmpeq_falls_through_when_not_equal() {
+        let mut t = make_thread_at_pc(1, vec![0x00, 0x00, 0x0A]);
+        t.thread_stack.push::<i32>(5);
+        t.thread_stack.push::<i32>(6);
+        assert!(if_icmpeq(&mut t).is_ok());
+        assert_eq!(t.pc, 3);
+    }
+
+    // if_icmpne: branch if value1 != value2
+    #[test]
+    fn test_if_icmpne_branches_when_not_equal() {
+        let mut t = make_thread_at_pc(1, vec![0x00, 0x00, 0x0A]);
+        t.thread_stack.push::<i32>(3);
+        t.thread_stack.push::<i32>(7);
+        assert!(if_icmpne(&mut t).is_ok());
+        assert_eq!(t.pc, 10);
+    }
+    #[test]
+    fn test_if_icmpne_falls_through_when_equal() {
+        let mut t = make_thread_at_pc(1, vec![0x00, 0x00, 0x0A]);
+        t.thread_stack.push::<i32>(5);
+        t.thread_stack.push::<i32>(5);
+        assert!(if_icmpne(&mut t).is_ok());
+        assert_eq!(t.pc, 3);
+    }
+
+    // if_icmplt: branch if value1 < value2
+    #[test]
+    fn test_if_icmplt_branches_when_value1_less() {
+        let mut t = make_thread_at_pc(1, vec![0x00, 0x00, 0x0A]);
+        t.thread_stack.push::<i32>(2); // value1
+        t.thread_stack.push::<i32>(5); // value2
+        assert!(if_icmplt(&mut t).is_ok());
+        assert_eq!(t.pc, 10);
+    }
+    #[test]
+    fn test_if_icmplt_falls_through_when_value1_not_less() {
+        let mut t = make_thread_at_pc(1, vec![0x00, 0x00, 0x0A]);
+        t.thread_stack.push::<i32>(5);
+        t.thread_stack.push::<i32>(5);
+        assert!(if_icmplt(&mut t).is_ok());
+        assert_eq!(t.pc, 3);
+    }
+
+    // if_icmpge: branch if value1 >= value2
+    #[test]
+    fn test_if_icmpge_branches_when_value1_ge() {
+        let mut t = make_thread_at_pc(1, vec![0x00, 0x00, 0x0A]);
+        t.thread_stack.push::<i32>(5);
+        t.thread_stack.push::<i32>(5);
+        assert!(if_icmpge(&mut t).is_ok());
+        assert_eq!(t.pc, 10);
+    }
+    #[test]
+    fn test_if_icmpge_falls_through_when_value1_less() {
+        let mut t = make_thread_at_pc(1, vec![0x00, 0x00, 0x0A]);
+        t.thread_stack.push::<i32>(3);
+        t.thread_stack.push::<i32>(5);
+        assert!(if_icmpge(&mut t).is_ok());
+        assert_eq!(t.pc, 3);
+    }
+
+    // if_icmpgt: branch if value1 > value2
+    #[test]
+    fn test_if_icmpgt_branches_when_value1_greater() {
+        let mut t = make_thread_at_pc(1, vec![0x00, 0x00, 0x0A]);
+        t.thread_stack.push::<i32>(10);
+        t.thread_stack.push::<i32>(5);
+        assert!(if_icmpgt(&mut t).is_ok());
+        assert_eq!(t.pc, 10);
+    }
+    #[test]
+    fn test_if_icmpgt_falls_through_when_value1_not_greater() {
+        let mut t = make_thread_at_pc(1, vec![0x00, 0x00, 0x0A]);
+        t.thread_stack.push::<i32>(5);
+        t.thread_stack.push::<i32>(5);
+        assert!(if_icmpgt(&mut t).is_ok());
+        assert_eq!(t.pc, 3);
+    }
+
+    // if_icmple: branch if value1 <= value2
+    #[test]
+    fn test_if_icmple_branches_when_value1_le() {
+        let mut t = make_thread_at_pc(1, vec![0x00, 0x00, 0x0A]);
+        t.thread_stack.push::<i32>(5);
+        t.thread_stack.push::<i32>(5);
+        assert!(if_icmple(&mut t).is_ok());
+        assert_eq!(t.pc, 10);
+    }
+    #[test]
+    fn test_if_icmple_falls_through_when_value1_greater() {
+        let mut t = make_thread_at_pc(1, vec![0x00, 0x00, 0x0A]);
+        t.thread_stack.push::<i32>(10);
+        t.thread_stack.push::<i32>(5);
+        assert!(if_icmple(&mut t).is_ok());
+        assert_eq!(t.pc, 3);
+    }
+
+    // if_acmpeq: branch if reference1 == reference2 (same object identity)
+    #[test]
+    fn test_if_acmpeq_branches_when_same_ref() {
+        let mut t = make_thread_at_pc(1, vec![0x00, 0x00, 0x0A]);
+        t.thread_stack.push(Reference::new(7)); // value1
+        t.thread_stack.push(Reference::new(7)); // value2
+        assert!(if_acmpeq(&mut t).is_ok());
+        assert_eq!(t.pc, 10);
+    }
+    #[test]
+    fn test_if_acmpeq_falls_through_when_different_refs() {
+        let mut t = make_thread_at_pc(1, vec![0x00, 0x00, 0x0A]);
+        t.thread_stack.push(Reference::new(5));
+        t.thread_stack.push(Reference::new(6));
+        assert!(if_acmpeq(&mut t).is_ok());
+        assert_eq!(t.pc, 3);
+    }
+
+    // if_acmpne: branch if reference1 != reference2
+    #[test]
+    fn test_if_acmpne_branches_when_different_refs() {
+        let mut t = make_thread_at_pc(1, vec![0x00, 0x00, 0x0A]);
+        t.thread_stack.push(Reference::new(5));
+        t.thread_stack.push(Reference::new(6));
+        assert!(if_acmpne(&mut t).is_ok());
+        assert_eq!(t.pc, 10);
+    }
+    #[test]
+    fn test_if_acmpne_falls_through_when_same_ref() {
+        let mut t = make_thread_at_pc(1, vec![0x00, 0x00, 0x0A]);
+        t.thread_stack.push(Reference::new(7));
+        t.thread_stack.push(Reference::new(7));
+        assert!(if_acmpne(&mut t).is_ok());
+        assert_eq!(t.pc, 3);
+    }
 
     // ── 0xa7–0xa9  control flow ───────────────────────────────────────────────
 
+    // goto: unconditionally jump to target = (pc-1) + branchoffset
     #[test]
-    #[should_panic]
-    fn test_goto_unimplemented() { let _ = goto(&mut make_thread()); }
-    #[test]
-    #[should_panic]
-    fn test_jsr_unimplemented() { let _ = jsr(&mut make_thread()); }
-    #[test]
-    #[should_panic]
-    fn test_ret_unimplemented() { let _ = ret(&mut make_thread()); }
+    fn test_goto_jumps_to_branch_target() {
+        let mut t = make_thread_at_pc(1, vec![0x00, 0x00, 0x14]); // offset = 20
+        assert!(goto(&mut t).is_ok());
+        assert_eq!(t.pc, 20); // (1-1) + 20 = 20
+    }
 
     // ── 0xaa–0xab  switch ─────────────────────────────────────────────────────
 
-    #[test]
-    #[should_panic]
-    fn test_tableswitch_unimplemented() { let _ = tableswitch(&mut make_thread()); }
-    #[test]
-    #[should_panic]
-    fn test_lookupswitch_unimplemented() { let _ = lookupswitch(&mut make_thread()); }
-
     // ── 0xac–0xb1  return ─────────────────────────────────────────────────────
-
-    #[test]
-    #[should_panic]
-    fn test_ireturn_unimplemented() { let _ = ireturn(&mut make_thread()); }
-    #[test]
-    #[should_panic]
-    fn test_lreturn_unimplemented() { let _ = lreturn(&mut make_thread()); }
-    #[test]
-    #[should_panic]
-    fn test_freturn_unimplemented() { let _ = freturn(&mut make_thread()); }
-    #[test]
-    #[should_panic]
-    fn test_dreturn_unimplemented() { let _ = dreturn(&mut make_thread()); }
-    #[test]
-    #[should_panic]
-    fn test_areturn_unimplemented() { let _ = areturn(&mut make_thread()); }
-    #[test]
-    #[should_panic]
-    fn test_return_unimplemented() { let _ = return_(&mut make_thread()); }
 
     // ── 0xb2–0xb5  field access ───────────────────────────────────────────────
 
-    #[test]
-    #[should_panic]
-    fn test_getstatic_unimplemented() { let _ = getstatic(&mut make_thread()); }
-    #[test]
-    #[should_panic]
-    fn test_putstatic_unimplemented() { let _ = putstatic(&mut make_thread()); }
-    #[test]
-    #[should_panic]
-    fn test_getfield_unimplemented() { let _ = getfield(&mut make_thread()); }
-    #[test]
-    #[should_panic]
-    fn test_putfield_unimplemented() { let _ = putfield(&mut make_thread()); }
-
     // ── 0xb6–0xba  invokes ────────────────────────────────────────────────────
 
-    #[test]
-    #[should_panic]
-    fn test_invokevirtual_unimplemented() { let _ = invokevirtual(&mut make_thread()); }
-    #[test]
-    #[should_panic]
-    fn test_invokespecial_unimplemented() { let _ = invokespecial(&mut make_thread()); }
-    #[test]
-    #[should_panic]
-    fn test_invokestatic_unimplemented() { let _ = invokestatic(&mut make_thread()); }
-    #[test]
-    #[should_panic]
-    fn test_invokeinterface_unimplemented() { let _ = invokeinterface(&mut make_thread()); }
-    #[test]
-    #[should_panic]
-    fn test_invokedynamic_unimplemented() { let _ = invokedynamic(&mut make_thread()); }
-
     // ── 0xbb–0xbd  array/object creation ─────────────────────────────────────
-
-    #[test]
-    #[should_panic]
-    fn test_new_unimplemented() { let _ = new(&mut make_thread()); }
-    #[test]
-    #[should_panic]
-    fn test_newarray_unimplemented() { let _ = newarray(&mut make_thread()); }
-    #[test]
-    #[should_panic]
-    fn test_anewarray_unimplemented() { let _ = anewarray(&mut make_thread()); }
 
     // ── 0xbe  arraylength ─────────────────────────────────────────────────────
 
@@ -3856,14 +5137,6 @@ mod tests {
         let mut t = make_thread();
         t.thread_stack.push(Reference::new(0));
         assert!(matches!(arraylength(&mut t).unwrap_err().downcast_ref::<InstructionError>(), Some(InstructionError::NullPointerException)));
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_arraylength_unimplemented() {
-        let mut t = make_thread();
-        t.thread_stack.push(Reference::new(1));
-        let _ = arraylength(&mut t);
     }
 
     // ── 0xbf  athrow ──────────────────────────────────────────────────────────
@@ -3875,22 +5148,7 @@ mod tests {
         assert!(matches!(athrow(&mut t).unwrap_err().downcast_ref::<InstructionError>(), Some(InstructionError::NullPointerException)));
     }
 
-    #[test]
-    #[should_panic]
-    fn test_athrow_unimplemented() {
-        let mut t = make_thread();
-        t.thread_stack.push(Reference::new(1));
-        let _ = athrow(&mut t);
-    }
-
     // ── 0xc0–0xc1  checkcast / instanceof ────────────────────────────────────
-
-    #[test]
-    #[should_panic]
-    fn test_checkcast_unimplemented() { let _ = checkcast(&mut make_thread()); }
-    #[test]
-    #[should_panic]
-    fn test_instanceof_unimplemented() { let _ = instanceof(&mut make_thread()); }
 
     // ── 0xc2–0xc3  monitor ────────────────────────────────────────────────────
 
@@ -3902,26 +5160,10 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
-    fn test_monitorenter_unimplemented() {
-        let mut t = make_thread();
-        t.thread_stack.push(Reference::new(1));
-        let _ = monitorenter(&mut t);
-    }
-
-    #[test]
     fn test_monitorexit_null_ref_throws() {
         let mut t = make_thread();
         t.thread_stack.push(Reference::new(0));
         assert!(matches!(monitorexit(&mut t).unwrap_err().downcast_ref::<InstructionError>(), Some(InstructionError::NullPointerException)));
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_monitorexit_unimplemented() {
-        let mut t = make_thread();
-        t.thread_stack.push(Reference::new(1));
-        let _ = monitorexit(&mut t);
     }
 
     // ── 0xc4  wide ────────────────────────────────────────────────────────────
@@ -3936,21 +5178,46 @@ mod tests {
 
     // ── 0xc5–0xc9  extended ───────────────────────────────────────────────────
 
+    // ifnull: branch if reference is null
     #[test]
-    #[should_panic]
-    fn test_multianewarray_unimplemented() { let _ = multianewarray(&mut make_thread()); }
+    fn test_ifnull_branches_when_null() {
+        let mut t = make_thread_at_pc(1, vec![0x00, 0x00, 0x0A]); // offset = 10
+        t.thread_stack.push(Reference::new(0)); // null reference
+        assert!(ifnull(&mut t).is_ok());
+        assert_eq!(t.pc, 10);
+    }
     #[test]
-    #[should_panic]
-    fn test_ifnull_unimplemented() { let _ = ifnull(&mut make_thread()); }
+    fn test_ifnull_falls_through_when_nonnull() {
+        let mut t = make_thread_at_pc(1, vec![0x00, 0x00, 0x0A]);
+        t.thread_stack.push(Reference::new(5)); // non-null reference
+        assert!(ifnull(&mut t).is_ok());
+        assert_eq!(t.pc, 3);
+    }
+
+    // ifnonnull: branch if reference is not null
     #[test]
-    #[should_panic]
-    fn test_ifnonnull_unimplemented() { let _ = ifnonnull(&mut make_thread()); }
+    fn test_ifnonnull_branches_when_nonnull() {
+        let mut t = make_thread_at_pc(1, vec![0x00, 0x00, 0x0A]);
+        t.thread_stack.push(Reference::new(5));
+        assert!(ifnonnull(&mut t).is_ok());
+        assert_eq!(t.pc, 10);
+    }
     #[test]
-    #[should_panic]
-    fn test_goto_w_unimplemented() { let _ = goto_w(&mut make_thread()); }
+    fn test_ifnonnull_falls_through_when_null() {
+        let mut t = make_thread_at_pc(1, vec![0x00, 0x00, 0x0A]);
+        t.thread_stack.push(Reference::new(0)); // null
+        assert!(ifnonnull(&mut t).is_ok());
+        assert_eq!(t.pc, 3);
+    }
+
+    // goto_w: unconditional jump with a 4-byte big-endian offset
     #[test]
-    #[should_panic]
-    fn test_jsr_w_unimplemented() { let _ = jsr_w(&mut make_thread()); }
+    fn test_goto_w_jumps_to_wide_branch_target() {
+        // pc=1; 4 offset bytes at code[1..=4]; offset = 0x0000_0064 = 100
+        let mut t = make_thread_at_pc(1, vec![0x00, 0x00, 0x00, 0x00, 0x64]);
+        assert!(goto_w(&mut t).is_ok());
+        assert_eq!(t.pc, 100); // (1-1) + 100 = 100
+    }
 
     // ── 0xca–0xff  reserved ───────────────────────────────────────────────────
 

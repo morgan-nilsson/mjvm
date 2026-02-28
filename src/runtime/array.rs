@@ -1,4 +1,5 @@
 use crate::runtime::reference_table::Reference;
+use crate::runtime::reference_table::ReferenceValue;
 
 pub struct ArrayValue<T: ArrayElement> {
     data: Vec<T>,
@@ -35,6 +36,7 @@ pub enum AnyArrayValue {
     I64(ArrayValue<i64>),
     F32(ArrayValue<f32>),
     F64(ArrayValue<f64>),
+    REF(ArrayValue<Reference>),
 }
 
 impl AnyArrayValue {
@@ -48,6 +50,7 @@ impl AnyArrayValue {
             AnyArrayValue::I64(a)  => a.len(),
             AnyArrayValue::F32(a)  => a.len(),
             AnyArrayValue::F64(a)  => a.len(),
+            AnyArrayValue::REF(a)  => a.len(),
         }
     }
 
@@ -61,6 +64,7 @@ impl AnyArrayValue {
             AnyArrayValue::I64(a)  => a.get(index).map(|v| Box::new(*v) as Box<dyn std::any::Any>),
             AnyArrayValue::F32(a)  => a.get(index).map(|v| Box::new(*v) as Box<dyn std::any::Any>),
             AnyArrayValue::F64(a)  => a.get(index).map(|v| Box::new(*v) as Box<dyn std::any::Any>),
+            AnyArrayValue::REF(a)  => a.get(index).map(|v| Box::new(*v) as Box<dyn std::any::Any>),
         }
     }
 
@@ -120,6 +124,13 @@ impl AnyArrayValue {
                     a.set(index, *v)
                 } else {
                     Err("Type mismatch for F64 array".into())
+                }
+            }
+            AnyArrayValue::REF(a) => {
+                if let Ok(v) = value.downcast::<Reference>() {
+                    a.set(index, *v)
+                } else {
+                    Err("Type mismatch for Reference array".into())
                 }
             }
         }
