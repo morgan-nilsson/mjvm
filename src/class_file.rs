@@ -1,8 +1,12 @@
-use std::io::{BufRead, BufReader, Read};
+use std::io::BufRead;
+use std::io::BufReader;
+use std::io::Read;
 use bitflags::bitflags;
-use anyhow::{Result, anyhow};
+use anyhow::Result;
+use anyhow::anyhow;
 
-use crate::const_pool::constant_pool::{ConstantPoolInfo, ConstantPoolInfoTag};
+use crate::constant_pool::ConstantPoolInfo;
+use crate::constant_pool::ConstantPoolInfoTag;
 
 #[derive(Debug)]
 pub struct ClassFile {
@@ -160,7 +164,7 @@ impl ConstantPoolInfo {
     pub fn from_reader<R: BufRead>(buf_reader: &mut R) -> Result<Self> {
         let mut tag_buf = [0; 1];
         buf_reader.read_exact(&mut tag_buf)?;
-        let tag = ConstantPoolInfoTag::try_from(u8::from_be_bytes(tag_buf)).map(|t| t).map_err(|_| anyhow!("Invalid constant pool tag in class file: {}", tag_buf[0]))?;
+        let tag = ConstantPoolInfoTag::try_from(u8::from_be_bytes(tag_buf)).map_err(|_| anyhow!("Invalid constant pool tag in class file: {}", tag_buf[0]))?;
 
         match tag {
             ConstantPoolInfoTag::ConstantClass => {
@@ -472,7 +476,7 @@ impl ConstantPoolMethodInfo {
         let mut attributes = Vec::with_capacity(attributes_count as usize);
 
         for _ in 0..attributes_count {
-            let attribute_info = AttributeInfo::from_reader(buf_reader, &constant_pool_info)?;
+            let attribute_info = AttributeInfo::from_reader(buf_reader, constant_pool_info)?;
             attributes.push(attribute_info);
         }
 
@@ -611,7 +615,7 @@ impl AttributeInfo {
                     code_length, 
                     code, 
                     exception_table_length, 
-                    exception_table: exception_table, 
+                    exception_table, 
                     attributes_count, 
                     attributes 
                 })
@@ -1427,7 +1431,7 @@ pub struct TypeAnnotation {
 }
 
 impl TypeAnnotation {
-    pub fn from_reader<R: BufRead>(buf_reader: &mut R) -> Result<Self> {
+    pub fn from_reader<R: BufRead>(_buf_reader: &mut R) -> Result<Self> {
         todo!("TypeAnnotation parsing not implemented yet");
     }
 }
@@ -1448,7 +1452,7 @@ pub enum TypeAnnotationTarget {
 }
 
 impl TypeAnnotationTarget {
-    pub fn from_reader<R: BufRead>(buf_reader: &mut R) -> Result<Self> {
+    pub fn from_reader<R: BufRead>(_buf_reader: &mut R) -> Result<Self> {
         todo!("TypeAnnotationTarget parsing not implemented yet");
     }
 }

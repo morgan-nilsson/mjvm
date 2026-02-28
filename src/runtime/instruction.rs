@@ -1,6 +1,3 @@
-use std::array;
-use std::ops::Shl;
-
 use crate::runtime::array::create_array_from_char;
 use crate::runtime::thread::Thread;
 use crate::runtime::reference_table::Reference;
@@ -11,12 +8,14 @@ use crate::runtime::reference_table::ReferenceValue;
 
 use anyhow::Ok;
 use anyhow::Result;
-use clap::builder::ValueParser;
 use thiserror::Error;
 
 pub fn preform_instruction(thread: &mut Thread) {
-    todo!("Preform instruction for thread");
+    let opcode = thread.read_byte_from_pc().expect("Failed to read opcode from bytecode");
 
+    if let Err(e) = call_by_opcode(thread, opcode) {
+        eprintln!("Error executing instruction with opcode {:#x}: {}", opcode, e);
+    }
 }
 
 fn call_by_opcode(thread: &mut Thread, opcode: u8) -> Result<()> {
@@ -285,7 +284,7 @@ fn aaload(thread: &mut Thread) -> Result<()> {
     }
 
     // get the array referenced
-    let lock = REFERENCE_TABLE.lock().map(|r| r).map_err(|_| InstructionError::InternalError)?;
+    let lock = REFERENCE_TABLE.lock().map_err(|_| InstructionError::InternalError)?;
     let array = lock.get_reference(&array_ref).ok_or(InstructionError::InternalError)?;
 
     // ensure this is an array
@@ -293,7 +292,7 @@ fn aaload(thread: &mut Thread) -> Result<()> {
         return Err(InstructionError::InternalError.into());
     }
 
-    let array = array.as_array().map(|a| a).ok_or(InstructionError::InternalError)?;
+    let array = array.as_array().ok_or(InstructionError::InternalError)?;
 
     // ensure the array is of type [reference]
     if !matches!(array, AnyArrayValue::REF(_)) {
@@ -316,7 +315,7 @@ fn aaload(thread: &mut Thread) -> Result<()> {
     let ref_value = value.downcast_ref::<Reference>().ok_or(InstructionError::InternalError)?;
 
     // push the value onto the stack
-    thread.thread_stack.push::<Reference>(ref_value.clone());
+    thread.thread_stack.push::<Reference>(*ref_value);
 
     Ok(())
 }
@@ -331,7 +330,7 @@ fn aastore(thread: &mut Thread) -> Result<()> {
     }
 
     // get the array referenced
-    let mut lock = REFERENCE_TABLE.lock().map(|r| r).map_err(|_| InstructionError::InternalError)?;
+    let mut lock = REFERENCE_TABLE.lock().map_err(|_| InstructionError::InternalError)?;
     let array = lock.get_mut_reference(&array_ref).ok_or(InstructionError::InternalError)?;
 
     // ensure this is an array
@@ -379,7 +378,7 @@ fn aload(thread: &mut Thread) -> Result<()> {
     let local_var = thread.local_vars.get::<Reference>(index as usize).ok_or(InstructionError::InternalError)?;
 
     // push the reference onto the stack
-    thread.thread_stack.push(local_var.clone());
+    thread.thread_stack.push(local_var);
 
     Ok(())
 }
@@ -389,7 +388,7 @@ fn aload_0(thread: &mut Thread) -> Result<()> {
     let local_var = thread.local_vars.get::<Reference>(0).ok_or(InstructionError::InternalError)?;
 
     // push the reference from the local variable at index 0 onto the stack
-    thread.thread_stack.push(local_var.clone());
+    thread.thread_stack.push(local_var);
 
     Ok(())
 }
@@ -399,7 +398,7 @@ fn aload_1(thread: &mut Thread) -> Result<()> {
     let local_var = thread.local_vars.get::<Reference>(1).ok_or(InstructionError::InternalError)?;
 
     // push the reference from the local variable at index 1 onto the stack
-    thread.thread_stack.push(local_var.clone());
+    thread.thread_stack.push(local_var);
 
     Ok(())
 }
@@ -409,7 +408,7 @@ fn aload_2(thread: &mut Thread) -> Result<()> {
     let local_var = thread.local_vars.get::<Reference>(2).ok_or(InstructionError::InternalError)?;
 
     // push the reference from the local variable at index 2 onto the stack
-    thread.thread_stack.push(local_var.clone());
+    thread.thread_stack.push(local_var);
 
     Ok(())
 }
@@ -419,7 +418,7 @@ fn aload_3(thread: &mut Thread) -> Result<()> {
     let local_var = thread.local_vars.get::<Reference>(3).ok_or(InstructionError::InternalError)?;
 
     // push the reference from the local variable at index 3 onto the stack
-    thread.thread_stack.push(local_var.clone());
+    thread.thread_stack.push(local_var);
 
     Ok(())
 }
@@ -455,7 +454,7 @@ fn arraylength(thread: &mut Thread) -> Result<()> {
     }
 
     // get the array referenced
-    let lock = REFERENCE_TABLE.lock().map(|r| r).map_err(|_| InstructionError::InternalError)?;
+    let lock = REFERENCE_TABLE.lock().map_err(|_| InstructionError::InternalError)?;
     let array = lock.get_reference(&array_ref).ok_or(InstructionError::InternalError)?;
 
     // ensure this is an array
@@ -463,7 +462,7 @@ fn arraylength(thread: &mut Thread) -> Result<()> {
         return Err(InstructionError::InternalError.into());
     }
 
-    let array = array.as_array().map(|a| a).ok_or(InstructionError::InternalError)?;
+    let array = array.as_array().ok_or(InstructionError::InternalError)?;
 
     // push the length of the array onto the stack
     thread.thread_stack.push(array.len() as i32);
@@ -547,7 +546,7 @@ fn baload(thread: &mut Thread) -> Result<()> {
     }
 
     // get the array referenced
-    let lock = REFERENCE_TABLE.lock().map(|r| r).map_err(|_| InstructionError::InternalError)?;
+    let lock = REFERENCE_TABLE.lock().map_err(|_| InstructionError::InternalError)?;
     let array = lock.get_reference(&array_ref).ok_or(InstructionError::InternalError)?;
 
     // ensure this is an array
@@ -555,7 +554,7 @@ fn baload(thread: &mut Thread) -> Result<()> {
         return Err(InstructionError::InternalError.into());
     }
 
-    let array = array.as_array().map(|a| a).ok_or(InstructionError::InternalError)?;
+    let array = array.as_array().ok_or(InstructionError::InternalError)?;
 
     // ensure the array is of type boolean
     if !matches!(array, AnyArrayValue::Bool(_)){
@@ -568,7 +567,7 @@ fn baload(thread: &mut Thread) -> Result<()> {
     }
 
     // push the value at the index onto the stack
-    let value: bool = array.get(index as usize).ok_or(InstructionError::InternalError)?.downcast_ref::<bool>().ok_or(InstructionError::InternalError)?.clone();
+    let value: bool = *array.get(index as usize).ok_or(InstructionError::InternalError)?.downcast_ref::<bool>().ok_or(InstructionError::InternalError)?;
 
     thread.thread_stack.push(value);
 
@@ -585,7 +584,7 @@ fn bastore(thread: &mut Thread) -> Result<()> {
     }
 
     // get the array referenced
-    let mut lock = REFERENCE_TABLE.lock().map(|r| r).map_err(|_| InstructionError::InternalError)?;
+    let mut lock = REFERENCE_TABLE.lock().map_err(|_| InstructionError::InternalError)?;
     let array = lock.get_mut_reference(&array_ref).ok_or(InstructionError::InternalError)?;
 
     // ensure this is an array
@@ -629,7 +628,7 @@ fn caload(thread: &mut Thread) -> Result<()> {
     }
 
     // get the array referenced
-    let lock = REFERENCE_TABLE.lock().map(|r| r).map_err(|_| InstructionError::InternalError)?;
+    let lock = REFERENCE_TABLE.lock().map_err(|_| InstructionError::InternalError)?;
     let array = lock.get_reference(&array_ref).ok_or(InstructionError::InternalError)?;
 
     // ensure this is an array
@@ -637,7 +636,7 @@ fn caload(thread: &mut Thread) -> Result<()> {
         return Err(InstructionError::InternalError.into());
     }
 
-    let array = array.as_array().map(|a| a).ok_or(InstructionError::InternalError)?;
+    let array = array.as_array().ok_or(InstructionError::InternalError)?;
 
     // ensure the array is of type char
     if !matches!(array, AnyArrayValue::Char(_)){
@@ -650,7 +649,7 @@ fn caload(thread: &mut Thread) -> Result<()> {
     }
 
     // push the value at the index onto the stack
-    let value: char = array.get(index as usize).ok_or(InstructionError::InternalError)?.downcast_ref::<char>().ok_or(InstructionError::InternalError)?.clone();
+    let value: char = *array.get(index as usize).ok_or(InstructionError::InternalError)?.downcast_ref::<char>().ok_or(InstructionError::InternalError)?;
     thread.thread_stack.push(value);
 
     Ok(())
@@ -666,7 +665,7 @@ fn castore(thread: &mut Thread) -> Result<()> {
     }
 
     // get the array referenced
-    let mut lock = REFERENCE_TABLE.lock().map(|r| r).map_err(|_| InstructionError::InternalError)?;
+    let mut lock = REFERENCE_TABLE.lock().map_err(|_| InstructionError::InternalError)?;
     let array = lock.get_mut_reference(&array_ref).ok_or(InstructionError::InternalError)?;
 
     // ensure this is an array
@@ -754,7 +753,7 @@ fn daload(thread: &mut Thread) -> Result<()> {
     }
 
     // get the array referenced
-    let lock = REFERENCE_TABLE.lock().map(|r| r).map_err(|_| InstructionError::InternalError)?;
+    let lock = REFERENCE_TABLE.lock().map_err(|_| InstructionError::InternalError)?;
     let array = lock.get_reference(&array_ref).ok_or(InstructionError::InternalError)?;
 
     // ensure this is an array
@@ -762,7 +761,7 @@ fn daload(thread: &mut Thread) -> Result<()> {
         return Err(InstructionError::InternalError.into());
     }
 
-    let array = array.as_array().map(|a| a).ok_or(InstructionError::InternalError)?;
+    let array = array.as_array().ok_or(InstructionError::InternalError)?;
 
     // ensure the array is of type double
     if !matches!(array, AnyArrayValue::F64(_)){
@@ -775,7 +774,7 @@ fn daload(thread: &mut Thread) -> Result<()> {
     }
 
     // push the value at the index onto the stack
-    let value: f64 = array.get(index as usize).ok_or(InstructionError::InternalError)?.downcast_ref::<f64>().ok_or(InstructionError::InternalError)?.clone();
+    let value: f64 = *array.get(index as usize).ok_or(InstructionError::InternalError)?.downcast_ref::<f64>().ok_or(InstructionError::InternalError)?;
     thread.thread_stack.push(value);
 
     Ok(())
@@ -792,7 +791,7 @@ fn dastore(thread: &mut Thread) -> Result<()> {
     }
 
     // get the array referenced
-    let mut lock = REFERENCE_TABLE.lock().map(|r| r).map_err(|_| InstructionError::InternalError)?;
+    let mut lock = REFERENCE_TABLE.lock().map_err(|_| InstructionError::InternalError)?;
     let array = lock.get_mut_reference(&array_ref).ok_or(InstructionError::InternalError)?;
 
     // ensure this is an array
@@ -824,9 +823,7 @@ fn dcmpg(thread: &mut Thread) -> Result<()> {
 
     // compare the two double values
     // push the result onto the stack
-    if value1.is_nan() || value2.is_nan() {
-        thread.thread_stack.push(1);
-    } else if value1 > value2 {
+    if value1.is_nan() || value2.is_nan() || value1 > value2 {
         thread.thread_stack.push(1);
     } else if value1 == value2 {
         thread.thread_stack.push(0);
@@ -1065,7 +1062,7 @@ fn dup(thread: &mut Thread) -> Result<()> {
     let value = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
 
     // push the value back onto the stack twice
-    thread.thread_stack.push(value.clone());
+    thread.thread_stack.push(value);
     thread.thread_stack.push(value);
 
     Ok(())
@@ -1076,7 +1073,7 @@ fn dup_x1(thread: &mut Thread) -> Result<()> {
     let value2 = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
 
     // push value1 back onto the stack, then push value2, then push value1 again
-    thread.thread_stack.push(value1.clone());
+    thread.thread_stack.push(value1);
     thread.thread_stack.push(value2);
     thread.thread_stack.push(value1);
 
@@ -1089,7 +1086,7 @@ fn dup_x2(thread: &mut Thread) -> Result<()> {
     let value3 = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
 
     // push value1 back onto the stack, then push value3, then push value2, then push value1 again
-    thread.thread_stack.push(value1.clone());
+    thread.thread_stack.push(value1);
     thread.thread_stack.push(value3);
     thread.thread_stack.push(value2);
     thread.thread_stack.push(value1);
@@ -1102,8 +1099,8 @@ fn dup2(thread: &mut Thread) -> Result<()> {
     let value2 = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
 
     // push value2 back onto the stack, then push value1, then push value2 again, then push value1 again
-    thread.thread_stack.push(value2.clone());
-    thread.thread_stack.push(value1.clone());
+    thread.thread_stack.push(value2);
+    thread.thread_stack.push(value1);
     thread.thread_stack.push(value2);
     thread.thread_stack.push(value1);
 
@@ -1116,8 +1113,8 @@ fn dup2_x1(thread: &mut Thread) -> Result<()> {
     let value3 = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
 
     // push value2 back onto the stack, then push value1, then push value3, then push value2 again, then push value1 again
-    thread.thread_stack.push(value2.clone());
-    thread.thread_stack.push(value1.clone());
+    thread.thread_stack.push(value2);
+    thread.thread_stack.push(value1);
     thread.thread_stack.push(value3);
     thread.thread_stack.push(value2);
     thread.thread_stack.push(value1);
@@ -1132,8 +1129,8 @@ fn dup2_x2(thread: &mut Thread) -> Result<()> {
     let value4 = thread.thread_stack.pop::<Reference>().ok_or(InstructionError::InternalError)?;
 
     // push value2 back onto the stack, then push value1, then push value4, then push value3, then push value2 again, then push value1 again
-    thread.thread_stack.push(value2.clone());
-    thread.thread_stack.push(value1.clone());
+    thread.thread_stack.push(value2);
+    thread.thread_stack.push(value1);
     thread.thread_stack.push(value4);
     thread.thread_stack.push(value3);
     thread.thread_stack.push(value2);
@@ -1192,7 +1189,7 @@ fn faload(thread: &mut Thread) -> Result<()> {
     }
 
     // get the array referenced
-    let lock = REFERENCE_TABLE.lock().map(|r| r).map_err(|_| InstructionError::InternalError)?;
+    let lock = REFERENCE_TABLE.lock().map_err(|_| InstructionError::InternalError)?;
     let array = lock.get_reference(&array_ref).ok_or(InstructionError::InternalError)?;
 
     // ensure this is an array
@@ -1200,7 +1197,7 @@ fn faload(thread: &mut Thread) -> Result<()> {
         return Err(InstructionError::InternalError.into());
     }
 
-    let array = array.as_array().map(|a| a).ok_or(InstructionError::InternalError)?;
+    let array = array.as_array().ok_or(InstructionError::InternalError)?;
 
     // ensure the array is of type float
     if !matches!(array, AnyArrayValue::F32(_)){
@@ -1213,7 +1210,7 @@ fn faload(thread: &mut Thread) -> Result<()> {
     }
 
     // push the value at the index onto the stack
-    let value: f32 = array.get(index as usize).ok_or(InstructionError::InternalError)?.downcast_ref::<f32>().ok_or(InstructionError::InternalError)?.clone();
+    let value: f32 = *array.get(index as usize).ok_or(InstructionError::InternalError)?.downcast_ref::<f32>().ok_or(InstructionError::InternalError)?;
     thread.thread_stack.push(value);
 
     Ok(())
@@ -1229,7 +1226,7 @@ fn fastore(thread: &mut Thread) -> Result<()> {
     }
 
     // get the array referenced
-    let mut lock = REFERENCE_TABLE.lock().map(|r| r).map_err(|_| InstructionError::InternalError)?;
+    let mut lock = REFERENCE_TABLE.lock().map_err(|_| InstructionError::InternalError)?;
     let array = lock.get_mut_reference(&array_ref).ok_or(InstructionError::InternalError)?;
 
     // ensure this is an array
@@ -1261,9 +1258,8 @@ fn fcmpg(thread: &mut Thread) -> Result<()> {
 
     // compare the two float values
     // push the result onto the stack
-    if value1.is_nan() || value2.is_nan() {
+    if value1.is_nan() || value2.is_nan() || value1 > value2 {
         thread.thread_stack.push(1);
-    } else if value1 > value2 {
         thread.thread_stack.push(1);
     } else if value1 == value2 {
         thread.thread_stack.push(0);
@@ -1628,7 +1624,7 @@ fn iaload(thread: &mut Thread) -> Result<()> {
     }
 
     // get the array referenced
-    let lock = REFERENCE_TABLE.lock().map(|r| r).map_err(|_| InstructionError::InternalError)?;
+    let lock = REFERENCE_TABLE.lock().map_err(|_| InstructionError::InternalError)?;
     let array = lock.get_reference(&array_ref).ok_or(InstructionError::InternalError)?;
 
     // ensure this is an array
@@ -1636,7 +1632,7 @@ fn iaload(thread: &mut Thread) -> Result<()> {
         return Err(InstructionError::InternalError.into());
     }
 
-    let array = array.as_array().map(|a| a).ok_or(InstructionError::InternalError)?;
+    let array = array.as_array().ok_or(InstructionError::InternalError)?;
 
     // ensure the array is of type int
     if !matches!(array, AnyArrayValue::I32(_)){
@@ -1649,7 +1645,7 @@ fn iaload(thread: &mut Thread) -> Result<()> {
     }
 
     // push the value at the index onto the stack
-    let value: i32 = array.get(index as usize).ok_or(InstructionError::InternalError)?.downcast_ref::<i32>().ok_or(InstructionError::InternalError)?.clone();
+    let value: i32 = *array.get(index as usize).ok_or(InstructionError::InternalError)?.downcast_ref::<i32>().ok_or(InstructionError::InternalError)?;
     thread.thread_stack.push(value);
 
     Ok(())
@@ -1676,7 +1672,7 @@ fn iastore(thread: &mut Thread) -> Result<()> {
     }
 
     // get the array referenced
-    let mut lock = REFERENCE_TABLE.lock().map(|r| r).map_err(|_| InstructionError::InternalError)?;
+    let mut lock = REFERENCE_TABLE.lock().map_err(|_| InstructionError::InternalError)?;
     let array = lock.get_mut_reference(&array_ref).ok_or(InstructionError::InternalError)?;
 
     // ensure this is an array
@@ -2368,7 +2364,7 @@ fn laload(thread: &mut Thread) -> Result<()> {
     }
 
     // get the array referenced
-    let lock = REFERENCE_TABLE.lock().map(|r| r).map_err(|_| InstructionError::InternalError)?;
+    let lock = REFERENCE_TABLE.lock().map_err(|_| InstructionError::InternalError)?;
     let array = lock.get_reference(&array_ref).ok_or(InstructionError::InternalError)?;
 
     // ensure this is an array
@@ -2376,7 +2372,7 @@ fn laload(thread: &mut Thread) -> Result<()> {
         return Err(InstructionError::InternalError.into());
     }
 
-    let array = array.as_array().map(|a| a).ok_or(InstructionError::InternalError)?;
+    let array = array.as_array().ok_or(InstructionError::InternalError)?;
 
     // ensure the array is of type long
     if !matches!(array, AnyArrayValue::I64(_)){
@@ -2389,7 +2385,7 @@ fn laload(thread: &mut Thread) -> Result<()> {
     }
 
     // push the value at the index onto the stack
-    let value: i64 = array.get(index as usize).ok_or(InstructionError::InternalError)?.downcast_ref::<i64>().ok_or(InstructionError::InternalError)?.clone();
+    let value: i64 = *array.get(index as usize).ok_or(InstructionError::InternalError)?.downcast_ref::<i64>().ok_or(InstructionError::InternalError)?;
     thread.thread_stack.push(value);
 
     Ok(())
@@ -2416,7 +2412,7 @@ fn lastore(thread: &mut Thread) -> Result<()> {
     }
 
     // get the array referenced
-    let mut lock = REFERENCE_TABLE.lock().map(|r| r).map_err(|_| InstructionError::InternalError)?;
+    let mut lock = REFERENCE_TABLE.lock().map_err(|_| InstructionError::InternalError)?;
     let array = lock.get_mut_reference(&array_ref).ok_or(InstructionError::InternalError)?;
 
     // ensure this is an array
@@ -2837,14 +2833,14 @@ fn newarray(thread: &mut Thread) -> Result<()> {
 
     // create a new array of the specified type and length and push a reference to it onto the stack
     let array_value = create_array_from_char(atype as char, count as u16);
-    let mut lock = REFERENCE_TABLE.lock().map(|r| r).map_err(|_| InstructionError::InternalError)?;
+    let mut lock = REFERENCE_TABLE.lock().map_err(|_| InstructionError::InternalError)?;
     let array_ref = lock.add_reference(ReferenceValue::Array(array_value));
     thread.thread_stack.push(array_ref);
 
     Ok(())
 }
 
-fn nop(thread: &mut Thread) -> Result<()> {
+fn nop(_: &mut Thread) -> Result<()> {
     Ok(())
 }
 
@@ -2914,7 +2910,7 @@ fn saload(thread: &mut Thread) -> Result<()> {
     }
 
     // get the array referenced
-    let lock = REFERENCE_TABLE.lock().map(|r| r).map_err(|_| InstructionError::InternalError)?;
+    let lock = REFERENCE_TABLE.lock().map_err(|_| InstructionError::InternalError)?;
     let array = lock.get_reference(&array_ref).ok_or(InstructionError::InternalError)?;
 
     // ensure this is an array
@@ -2922,7 +2918,7 @@ fn saload(thread: &mut Thread) -> Result<()> {
         return Err(InstructionError::InternalError.into());
     }
 
-    let array = array.as_array().map(|a| a).ok_or(InstructionError::InternalError)?;
+    let array = array.as_array().ok_or(InstructionError::InternalError)?;
 
     // ensure the array is of type short
     if !matches!(array, AnyArrayValue::I16(_)){
@@ -2935,7 +2931,7 @@ fn saload(thread: &mut Thread) -> Result<()> {
     }
 
     // push the value at the index onto the stack
-    let value: i16 = array.get(index as usize).ok_or(InstructionError::InternalError)?.downcast_ref::<i16>().ok_or(InstructionError::InternalError)?.clone();
+    let value: i16 = *array.get(index as usize).ok_or(InstructionError::InternalError)?.downcast_ref::<i16>().ok_or(InstructionError::InternalError)?;
     thread.thread_stack.push(value);
 
     Ok(())
@@ -2951,7 +2947,7 @@ fn sastore(thread: &mut Thread) -> Result<()> {
     }
 
     // get the array referenced
-    let mut lock = REFERENCE_TABLE.lock().map(|r| r).map_err(|_| InstructionError::InternalError)?;
+    let mut lock = REFERENCE_TABLE.lock().map_err(|_| InstructionError::InternalError)?;
     let array = lock.get_mut_reference(&array_ref).ok_or(InstructionError::InternalError)?;
 
     // ensure this is an array

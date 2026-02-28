@@ -1,7 +1,6 @@
-use core::panic;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use std::sync::Mutex;
 use crate::runtime::reference_table::Reference;
-use log::warn;
 
 pub struct Thread {
     pub pc: usize,
@@ -130,6 +129,7 @@ impl Stackable for Reference {
     }
 }
 
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct ThreadStack {
     data: Vec<u8>,
 }

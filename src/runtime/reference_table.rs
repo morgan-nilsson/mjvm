@@ -9,23 +9,23 @@ pub static NULL_REF: Reference = Reference { ref_index: 0 };
 
 
 pub struct ReferenceTable {
-    table: Vec<Box<ReferenceValue>>,
+    table: Vec<ReferenceValue>,
 }
 
 impl ReferenceTable {
     // Adds references to a table
     pub fn add_reference(&mut self, value: ReferenceValue) -> Reference {
-        self.table.push(Box::new(value));
+        self.table.push(value);
         Reference {
             ref_index: (self.table.len() - 1) as u32,
         }
     }
 
-    pub fn get_reference(&self, reference: &Reference) -> Option<&Box<ReferenceValue>> {
+    pub fn get_reference(&self, reference: &Reference) -> Option<&ReferenceValue> {
         self.table.get(reference.ref_index as usize)
     }
 
-    pub fn get_mut_reference(&mut self, reference: &Reference) -> Option<&mut Box<ReferenceValue>> {
+    pub fn get_mut_reference(&mut self, reference: &Reference) -> Option<&mut ReferenceValue> {
         self.table.get_mut(reference.ref_index as usize)
     }
 }
@@ -55,7 +55,7 @@ impl Reference {
 
 impl Default for Reference {
     fn default() -> Self {
-        NULL_REF.clone()
+        NULL_REF
     }
 }
 

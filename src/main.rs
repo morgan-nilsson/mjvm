@@ -3,7 +3,7 @@ use log::debug;
 use std::fs::File;
 use std::io::BufReader;
 
-use mjvm::class_file::class_file::ClassFile;
+use mjvm::class_file::ClassFile;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about)]

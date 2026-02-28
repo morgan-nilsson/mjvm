@@ -1,7 +1,7 @@
 use std::fs::File;
 
-use mjvm::class_file::class_file::{AccessFlags, AttributeInfo, ClassFile, MethodAccessFlags};
-use mjvm::const_pool::constant_pool::ConstantPoolInfo;
+use mjvm::class_file::{AccessFlags, AttributeInfo, ClassFile, MethodAccessFlags};
+use mjvm::constant_pool::ConstantPoolInfo;
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 

@@ -1,5 +1,4 @@
 use crate::runtime::reference_table::Reference;
-use crate::runtime::reference_table::ReferenceValue;
 
 pub struct ArrayValue<T: ArrayElement> {
     data: Vec<T>,
@@ -16,7 +15,8 @@ impl<T: ArrayElement + Clone + Default> ArrayValue<T> {
 
     pub fn set(&mut self, index: usize, value: T) -> Result<(), String> {
         if index < self.data.len() {
-            Ok(self.data[index] = value)
+            self.data[index] = value;
+            Ok(())
         } else {
             Err(format!("Index out of bounds: {}", index))
         }
@@ -24,6 +24,10 @@ impl<T: ArrayElement + Clone + Default> ArrayValue<T> {
 
     pub fn len(&self) -> usize {
         self.data.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.data.is_empty()
     }
 }
 
@@ -52,6 +56,10 @@ impl AnyArrayValue {
             AnyArrayValue::F64(a)  => a.len(),
             AnyArrayValue::REF(a)  => a.len(),
         }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     pub fn get(&self, index: usize) -> Option<Box<dyn std::any::Any>> {

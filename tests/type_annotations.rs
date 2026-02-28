@@ -1,6 +1,6 @@
 use std::fs::File;
 
-use mjvm::class_file::class_file::ClassFile;
+use mjvm::class_file::ClassFile;
 
 fn open(fixture: &str) -> ClassFile {
     let file = File::open(format!("tests/fixtures/{}", fixture))
@@ -52,11 +52,11 @@ fn type_annotated_has_three_methods() {
 #[test]
 #[ignore = "known bug: TypeAnnotation::from_reader is not yet implemented (todo!())"]
 fn get_greeting_has_runtime_visible_type_annotations() {
-    use mjvm::class_file::class_file::AttributeInfo;
+    use mjvm::class_file::AttributeInfo;
     let cf = open("TypeAnnotated.class");
     let method = cf.methods.iter().find(|m| {
         let name_entry = &cf.constant_pool[m.name_index as usize - 1];
-        if let mjvm::const_pool::constant_pool::ConstantPoolInfo::ConstantUtf8 { bytes, .. } = name_entry {
+        if let mjvm::constant_pool::ConstantPoolInfo::ConstantUtf8 { bytes, .. } = name_entry {
             std::str::from_utf8(bytes).unwrap_or("") == "getGreeting"
         } else {
             false
@@ -77,11 +77,11 @@ fn get_greeting_has_runtime_visible_type_annotations() {
 #[test]
 #[ignore = "known bug: TypeAnnotation::from_reader is not yet implemented (todo!())"]
 fn get_greeting_type_annotation_is_method_return() {
-    use mjvm::class_file::class_file::AttributeInfo;
+    use mjvm::class_file::AttributeInfo;
     let cf = open("TypeAnnotated.class");
     let method = cf.methods.iter().find(|m| {
         let name_entry = &cf.constant_pool[m.name_index as usize - 1];
-        if let mjvm::const_pool::constant_pool::ConstantPoolInfo::ConstantUtf8 { bytes, .. } = name_entry {
+        if let mjvm::constant_pool::ConstantPoolInfo::ConstantUtf8 { bytes, .. } = name_entry {
             std::str::from_utf8(bytes).unwrap_or("") == "getGreeting"
         } else {
             false
@@ -107,11 +107,11 @@ fn get_greeting_type_annotation_is_method_return() {
 #[test]
 #[ignore = "known bug: TypeAnnotation::from_reader is not yet implemented (todo!())"]
 fn add_has_formal_parameter_type_annotations() {
-    use mjvm::class_file::class_file::AttributeInfo;
+    use mjvm::class_file::AttributeInfo;
     let cf = open("TypeAnnotated.class");
     let method = cf.methods.iter().find(|m| {
         let name_entry = &cf.constant_pool[m.name_index as usize - 1];
-        if let mjvm::const_pool::constant_pool::ConstantPoolInfo::ConstantUtf8 { bytes, .. } = name_entry {
+        if let mjvm::constant_pool::ConstantPoolInfo::ConstantUtf8 { bytes, .. } = name_entry {
             std::str::from_utf8(bytes).unwrap_or("") == "add"
         } else {
             false
