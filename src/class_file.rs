@@ -55,9 +55,17 @@ impl ClassFile {
         // constant pool
         let mut constant_pool = Vec::with_capacity(constant_pool_count as usize);
 
-        for _ in 0..constant_pool_count {
+        let mut remaining = constant_pool_count as usize;
+        while remaining > 0 {
             let cp_info = ConstantPoolInfo::from_reader(&mut buf_reader)?;
+            let is_wide = matches!(cp_info,
+                ConstantPoolInfo::ConstantLong { .. } | ConstantPoolInfo::ConstantDouble { .. });
             constant_pool.push(cp_info);
+            remaining -= 1;
+            if is_wide && remaining > 0 {
+                constant_pool.push(ConstantPoolInfo::LongDoublePhantom);
+                remaining -= 1;
+            }
         }
 
         // access flags
@@ -367,10 +375,7 @@ impl FieldInfo {
         // access flags
         let mut access_flags_buf = [0; 2];
         buf_reader.read_exact(&mut access_flags_buf)?;
-        let access_flags = FieldInfoAccessFlags::try_from(u16::from_be_bytes(access_flags_buf));
-        if access_flags.is_err() {
-            return Err(anyhow!("Invalid field access flags in class file"));
-        }
+        let access_flags = FieldInfoAccessFlags::from_bits(u16::from_be_bytes(access_flags_buf));
 
         // name index
         let mut name_index_buf = [0; 2];
@@ -405,35 +410,18 @@ impl FieldInfo {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum FieldInfoAccessFlags {
-    Public = 0x0001,
-    Private = 0x0002,
-    Protected = 0x0004,
-    Static = 0x0008,
-    Final = 0x0010,
-    Volatile = 0x0040,
-    Transient = 0x0080,
-    Synthetic = 0x1000,
-    Enum = 0x4000,
-}
-
-impl TryFrom<u16> for FieldInfoAccessFlags {
-    type Error = ();
-
-    fn try_from(value: u16) -> Result<Self, Self::Error> {
-        match value {
-            0x0001 => Ok(FieldInfoAccessFlags::Public),
-            0x0002 => Ok(FieldInfoAccessFlags::Private),
-            0x0004 => Ok(FieldInfoAccessFlags::Protected),
-            0x0008 => Ok(FieldInfoAccessFlags::Static),
-            0x0010 => Ok(FieldInfoAccessFlags::Final),
-            0x0040 => Ok(FieldInfoAccessFlags::Volatile),
-            0x0080 => Ok(FieldInfoAccessFlags::Transient),
-            0x1000 => Ok(FieldInfoAccessFlags::Synthetic),
-            0x4000 => Ok(FieldInfoAccessFlags::Enum),
-            _ => Err(()),
-        }
+bitflags! {
+    #[derive(Debug, Copy, Clone, PartialEq, Eq)]
+    pub struct FieldInfoAccessFlags: u16 {
+        const Public = 0x0001;
+        const Private = 0x0002;
+        const Protected = 0x0004;
+        const Static = 0x0008;
+        const Final = 0x0010;
+        const Volatile = 0x0040;
+        const Transient = 0x0080;
+        const Synthetic = 0x1000;
+        const Enum = 0x4000;
     }
 }
 

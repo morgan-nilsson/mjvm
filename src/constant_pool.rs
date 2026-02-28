@@ -80,4 +80,5 @@ pub enum ConstantPoolInfo {
     ConstantInvokeDynamic { bootstrap_method_attr_index: u16, name_and_type_index: u16 },
     ConstantModule { name_index: u16 },
     ConstantPackage { name_index: u16 },
+    LongDoublePhantom,
 }
