@@ -1421,7 +1421,7 @@ impl ParameterAnnotations {
 
 #[derive(Debug)]
 pub struct TypeAnnotation {
-    pub type_annotation_target: TypeAnnotationTarget,
+    pub type_annotation_info: TypeAnnotationInfo,
     pub type_path: TypePath,
     pub type_index: u16,
     pub num_element_value_pairs: u16,
@@ -1429,29 +1429,148 @@ pub struct TypeAnnotation {
 }
 
 impl TypeAnnotation {
-    pub fn from_reader<R: BufRead>(_buf_reader: &mut R) -> Result<Self> {
-        todo!("TypeAnnotation parsing not implemented yet");
+    pub fn from_reader<R: BufRead>(buf_reader: &mut R) -> Result<Self> {
+        let type_annotation_info = TypeAnnotationInfo::from_reader(buf_reader)?;
+        let type_path = TypePath::from_reader(buf_reader)?;
+
+        let mut type_index_buf = [0; 2];
+        buf_reader.read_exact(&mut type_index_buf)?;
+        let type_index = u16::from_be_bytes(type_index_buf);
+
+        let mut num_element_value_pairs_buf = [0; 2];
+        buf_reader.read_exact(&mut num_element_value_pairs_buf)?;
+        let num_element_value_pairs = u16::from_be_bytes(num_element_value_pairs_buf);
+
+        let mut element_value_pairs = Vec::with_capacity(num_element_value_pairs as usize);
+
+        for _ in 0..num_element_value_pairs {
+            let mut element_name_index_buf = [0; 2];
+            buf_reader.read_exact(&mut element_name_index_buf)?;
+            let element_name_index = u16::from_be_bytes(element_name_index_buf);
+
+            let value = ElementValue::from_reader(buf_reader)?;
+
+            element_value_pairs.push(ElementValuePair { element_name_index, value });
+        }
+
+        Ok(TypeAnnotation {
+            type_annotation_info,
+            type_path,
+            type_index,
+            num_element_value_pairs,
+            element_value_pairs,
+        })
     }
 }
 
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum TypeAnnotationTarget {
-    TypeParameterTarget { type_parameter_index: u8 },
-    SupertypeTarget { supertype_index: u16 },
-    TypeParameterBoundTarget { type_parameter_index: u8, bound_index: u8 },
-    EmptyTarget,
-    FormalParameterTarget { formal_parameter_index: u8 },
-    ThrowsTarget { throws_type_index: u16 },
-    LocalvarTarget { table_length: u16, table: Vec<LocalvarTargetTableEntry> },
-    CatchTarget { exception_table_index: u16 },
-    OffsetTarget { offset: u16 },
-    TypeArgumentTarget { offset: u16, type_argument_index: u8 },
+pub enum TypeAnnotationInfo {
+    TypeParameterTarget { target_type: u8, type_parameter_index: u8 },
+    SupertypeTarget { target_type: u8, supertype_index: u16 },
+    TypeParameterBoundTarget { target_type: u8, type_parameter_index: u8, bound_index: u8 },
+    EmptyTarget { target_type: u8 },
+    FormalParameterTarget { target_type: u8, formal_parameter_index: u8 },
+    ThrowsTarget { target_type: u8, throws_type_index: u16 },
+    LocalvarTarget { target_type: u8, table_length: u16, table: Vec<LocalvarTargetTableEntry> },
+    CatchTarget { target_type: u8, exception_table_index: u16 },
+    OffsetTarget { target_type: u8, offset: u16 },
+    TypeArgumentTarget { target_type: u8, offset: u16, type_argument_index: u8 },
 }
 
-impl TypeAnnotationTarget {
-    pub fn from_reader<R: BufRead>(_buf_reader: &mut R) -> Result<Self> {
-        todo!("TypeAnnotationTarget parsing not implemented yet");
+impl TypeAnnotationInfo {
+    pub fn from_reader<R: BufRead>(buf_reader: &mut R) -> Result<Self> {
+        let mut target_type_buf = [0; 1];
+        buf_reader.read_exact(&mut target_type_buf)?;
+        let target_type = u8::from_be_bytes(target_type_buf);
+
+        match target_type {
+            0x00 | 0x01 => {
+                let mut type_parameter_index_buf = [0; 1];
+                buf_reader.read_exact(&mut type_parameter_index_buf)?;
+                let type_parameter_index = u8::from_be_bytes(type_parameter_index_buf);
+                Ok(TypeAnnotationInfo::TypeParameterTarget { target_type, type_parameter_index })
+            }
+            0x10 => {
+                let mut supertype_index_buf = [0; 2];
+                buf_reader.read_exact(&mut supertype_index_buf)?;
+                let supertype_index = u16::from_be_bytes(supertype_index_buf);
+                Ok(TypeAnnotationInfo::SupertypeTarget { target_type, supertype_index })
+            }
+            0x11 | 0x12 => {
+                let mut type_parameter_index_buf = [0; 1];
+                buf_reader.read_exact(&mut type_parameter_index_buf)?;
+                let type_parameter_index = u8::from_be_bytes(type_parameter_index_buf);
+
+                let mut bound_index_buf = [0; 1];
+                buf_reader.read_exact(&mut bound_index_buf)?;
+                let bound_index = u8::from_be_bytes(bound_index_buf);
+
+                Ok(TypeAnnotationInfo::TypeParameterBoundTarget { target_type, type_parameter_index, bound_index })
+            }
+            0x13 | 0x14 | 0x15 => {
+                Ok(TypeAnnotationInfo::EmptyTarget { target_type })
+            }
+            0x16 => {
+                let mut formal_parameter_index_buf = [0; 1];
+                buf_reader.read_exact(&mut formal_parameter_index_buf)?;
+                let formal_parameter_index = u8::from_be_bytes(formal_parameter_index_buf);
+                Ok(TypeAnnotationInfo::FormalParameterTarget { target_type, formal_parameter_index })
+            }
+            0x17 => {
+                let mut throws_type_index_buf = [0; 2];
+                buf_reader.read_exact(&mut throws_type_index_buf)?;
+                let throws_type_index = u16::from_be_bytes(throws_type_index_buf);
+                Ok(TypeAnnotationInfo::ThrowsTarget { target_type, throws_type_index })
+            }
+            0x40 | 0x41 => {
+                let mut table_length_buf = [0; 2];
+                buf_reader.read_exact(&mut table_length_buf)?;
+                let table_length = u16::from_be_bytes(table_length_buf);
+
+                let mut table = Vec::with_capacity(table_length as usize);
+                for _ in 0..table_length {
+                    let entry = LocalvarTargetTableEntry::from_reader(buf_reader)?;
+                    table.push(entry);
+                }
+
+                Ok(TypeAnnotationInfo::LocalvarTarget { target_type, table_length, table })
+            }
+            0x42 => {
+                let mut exception_table_index_buf = [0; 2];
+                buf_reader.read_exact(&mut exception_table_index_buf)?;
+                let exception_table_index = u16::from_be_bytes(exception_table_index_buf);
+                Ok(TypeAnnotationInfo::CatchTarget { target_type, exception_table_index })
+            }
+            0x43..=0x46 => {
+                let mut offset_buf = [0; 2];
+                buf_reader.read_exact(&mut offset_buf)?;
+                let offset = u16::from_be_bytes(offset_buf);
+
+                if target_type == 0x43 {
+                    Ok(TypeAnnotationInfo::OffsetTarget { target_type, offset })
+                } else {
+                    let mut type_argument_index_buf = [0; 1];
+                    buf_reader.read_exact(&mut type_argument_index_buf)?;
+                    let type_argument_index = u8::from_be_bytes(type_argument_index_buf);
+                    Ok(TypeAnnotationInfo::TypeArgumentTarget { target_type, offset, type_argument_index })
+                }
+            }
+            0x47..=0x4B => {
+                let mut offset_buf = [0; 2];
+                buf_reader.read_exact(&mut offset_buf)?;
+                let offset = u16::from_be_bytes(offset_buf);
+
+                let mut type_argument_index_buf = [0; 1];
+                buf_reader.read_exact(&mut type_argument_index_buf)?;
+                let type_argument_index = u8::from_be_bytes(type_argument_index_buf);
+
+                Ok(TypeAnnotationInfo::TypeArgumentTarget { target_type, offset, type_argument_index })
+            }
+            _ => {
+                Err(anyhow!("Invalid target type for type annotation in class file"))
+            }
+        }
     }
 }
 
@@ -1460,6 +1579,24 @@ pub struct LocalvarTargetTableEntry {
     start_pc: u16,
     length: u16,
     index: u16,
+}
+
+impl LocalvarTargetTableEntry {
+    pub fn from_reader<R: BufRead>(buf_reader: &mut R) -> Result<Self> {
+        let mut start_pc_buf = [0; 2];
+        buf_reader.read_exact(&mut start_pc_buf)?;
+        let start_pc = u16::from_be_bytes(start_pc_buf);
+
+        let mut length_buf = [0; 2];
+        buf_reader.read_exact(&mut length_buf)?;
+        let length = u16::from_be_bytes(length_buf);
+
+        let mut index_buf = [0; 2];
+        buf_reader.read_exact(&mut index_buf)?;
+        let index = u16::from_be_bytes(index_buf);
+
+        Ok(LocalvarTargetTableEntry { start_pc, length, index })
+    }
 }
 
 #[derive(Debug)]

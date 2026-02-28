@@ -1,6 +1,7 @@
 use std::fs::File;
 
-use mjvm::class_file::ClassFile;
+use mjvm::class_file::{AttributeInfo, ClassFile, TypeAnnotation, TypeAnnotationInfo};
+use mjvm::constant_pool::ConstantPoolInfo;
 
 fn open(fixture: &str) -> ClassFile {
     let file = File::open(format!("tests/fixtures/{}", fixture))
@@ -9,40 +10,42 @@ fn open(fixture: &str) -> ClassFile {
         .unwrap_or_else(|e| panic!("failed to parse '{}': {}", fixture, e))
 }
 
+fn cp_utf8<'a>(cp: &'a [ConstantPoolInfo], one_based: u16) -> &'a str {
+    match &cp[one_based as usize - 1] {
+        ConstantPoolInfo::ConstantUtf8 { bytes, .. } => {
+            std::str::from_utf8(bytes).expect("CP entry is not valid UTF-8")
+        }
+        other => panic!("CP[{}] is not Utf8: {:?}", one_based, other),
+    }
+}
+
+/// Extracts the RuntimeVisibleTypeAnnotations from a method's attributes.
+fn method_type_annotations<'a>(cf: &'a ClassFile, method_name: &str) -> &'a Vec<TypeAnnotation> {
+    let method = cf.methods.iter().find(|m| {
+        cp_utf8(&cf.constant_pool, m.name_index) == method_name
+    }).unwrap_or_else(|| panic!("{} not found", method_name));
+
+    for attr in &method.attributes {
+        if let AttributeInfo::RuntimeVisibleTypeAnnotations { annotations, .. } = attr {
+            return annotations;
+        }
+    }
+    panic!("RuntimeVisibleTypeAnnotations not found on {}", method_name);
+}
+
 // ── TypeAnnotated.class ───────────────────────────────────────────────────────
 //
 // public class TypeAnnotated {
 //     public @TypeAnno String getGreeting() { ... }  // METHOD_RETURN type annotation
 //     public @TypeAnno int add(@TypeAnno int a, @TypeAnno int b) { ... }
 // }
-//
-// Both methods carry RuntimeVisibleTypeAnnotations, which triggers
-// TypeAnnotation::from_reader — currently implemented as todo!().
-//
-// These tests document the gap. The `_currently_panics` variant passes by
-// catching the panic, proving the bug is real. The `_parses_successfully`
-// variant is ignored until the implementation is complete.
 
 #[test]
-fn type_annotated_currently_panics() {
-    // TypeAnnotation::from_reader hits todo!(), causing a panic.
-    let file = File::open("tests/fixtures/TypeAnnotated.class")
-        .expect("fixture not found");
-    let result = std::panic::catch_unwind(|| ClassFile::from_reader(file));
-    assert!(
-        result.is_err(),
-        "Expected a panic from the unimplemented TypeAnnotation parser"
-    );
-}
-
-#[test]
-#[ignore = "known bug: TypeAnnotation::from_reader is not yet implemented (todo!())"]
 fn type_annotated_parses_successfully() {
     open("TypeAnnotated.class");
 }
 
 #[test]
-#[ignore = "known bug: TypeAnnotation::from_reader is not yet implemented (todo!())"]
 fn type_annotated_has_three_methods() {
     let cf = open("TypeAnnotated.class");
     // <init>, getGreeting, add
@@ -50,84 +53,104 @@ fn type_annotated_has_three_methods() {
 }
 
 #[test]
-#[ignore = "known bug: TypeAnnotation::from_reader is not yet implemented (todo!())"]
+fn init_has_no_type_annotations() {
+    let cf = open("TypeAnnotated.class");
+    let method = cf.methods.iter().find(|m| {
+        cp_utf8(&cf.constant_pool, m.name_index) == "<init>"
+    }).expect("<init> not found");
+    let has = method.attributes.iter().any(|a|
+        matches!(a, AttributeInfo::RuntimeVisibleTypeAnnotations { .. })
+    );
+    assert!(!has, "<init> should have no type annotations");
+}
+
+// ── getGreeting: single METHOD_RETURN annotation ────────────────────────────
+
+#[test]
 fn get_greeting_has_runtime_visible_type_annotations() {
-    use mjvm::class_file::AttributeInfo;
     let cf = open("TypeAnnotated.class");
-    let method = cf.methods.iter().find(|m| {
-        let name_entry = &cf.constant_pool[m.name_index as usize - 1];
-        if let mjvm::constant_pool::ConstantPoolInfo::ConstantUtf8 { bytes, .. } = name_entry {
-            std::str::from_utf8(bytes).unwrap_or("") == "getGreeting"
-        } else {
-            false
-        }
-    }).expect("getGreeting not found");
-
-    // The Code attribute's inner attributes should contain RuntimeVisibleTypeAnnotations
-    let has_rvta = method.attributes.iter().any(|a| {
-        if let AttributeInfo::Code { attributes, .. } = a {
-            attributes.iter().any(|ca| matches!(ca, AttributeInfo::RuntimeVisibleTypeAnnotations { .. }))
-        } else {
-            false
-        }
-    });
-    assert!(has_rvta, "Expected RuntimeVisibleTypeAnnotations inside Code of getGreeting");
+    let annotations = method_type_annotations(&cf, "getGreeting");
+    assert_eq!(annotations.len(), 1);
 }
 
 #[test]
-#[ignore = "known bug: TypeAnnotation::from_reader is not yet implemented (todo!())"]
-fn get_greeting_type_annotation_is_method_return() {
-    use mjvm::class_file::AttributeInfo;
+fn get_greeting_annotation_target_is_method_return() {
     let cf = open("TypeAnnotated.class");
-    let method = cf.methods.iter().find(|m| {
-        let name_entry = &cf.constant_pool[m.name_index as usize - 1];
-        if let mjvm::constant_pool::ConstantPoolInfo::ConstantUtf8 { bytes, .. } = name_entry {
-            std::str::from_utf8(bytes).unwrap_or("") == "getGreeting"
-        } else {
-            false
-        }
-    }).expect("getGreeting not found");
-
-    for attr in &method.attributes {
-        if let AttributeInfo::Code { attributes, .. } = attr {
-            for code_attr in attributes {
-                if let AttributeInfo::RuntimeVisibleTypeAnnotations { num_annotations, annotations } = code_attr {
-                    assert_eq!(*num_annotations, 1);
-                    assert_eq!(annotations.len(), 1);
-                    // target should be METHOD_RETURN (target_type = 0x14)
-                    // Once TypeAnnotationTarget is implemented, assert the variant here.
-                    return;
-                }
-            }
-        }
-    }
-    panic!("RuntimeVisibleTypeAnnotations not found in getGreeting");
+    let ann = &method_type_annotations(&cf, "getGreeting")[0];
+    assert_eq!(ann.type_annotation_info, TypeAnnotationInfo::EmptyTarget { target_type: 0x14 });
 }
 
 #[test]
-#[ignore = "known bug: TypeAnnotation::from_reader is not yet implemented (todo!())"]
-fn add_has_formal_parameter_type_annotations() {
-    use mjvm::class_file::AttributeInfo;
+fn get_greeting_annotation_type_is_type_anno() {
     let cf = open("TypeAnnotated.class");
-    let method = cf.methods.iter().find(|m| {
-        let name_entry = &cf.constant_pool[m.name_index as usize - 1];
-        if let mjvm::constant_pool::ConstantPoolInfo::ConstantUtf8 { bytes, .. } = name_entry {
-            std::str::from_utf8(bytes).unwrap_or("") == "add"
-        } else {
-            false
-        }
-    }).expect("add not found");
+    let ann = &method_type_annotations(&cf, "getGreeting")[0];
+    // type_index → CP #16 = Utf8 "LTypeAnno;"
+    assert_eq!(cp_utf8(&cf.constant_pool, ann.type_index), "LTypeAnno;");
+}
 
-    for attr in &method.attributes {
-        if let AttributeInfo::Code { attributes, .. } = attr {
-            for code_attr in attributes {
-                if let AttributeInfo::RuntimeVisibleTypeAnnotations { num_annotations, .. } = code_attr {
-                    // METHOD_RETURN (1) + two METHOD_FORMAL_PARAMETER (2) = 3 annotations
-                    assert_eq!(*num_annotations, 3);
-                    return;
-                }
-            }
-        }
+#[test]
+fn get_greeting_annotation_has_empty_type_path() {
+    let cf = open("TypeAnnotated.class");
+    let ann = &method_type_annotations(&cf, "getGreeting")[0];
+    assert_eq!(ann.type_path.path_length, 0);
+    assert!(ann.type_path.paths.is_empty());
+}
+
+#[test]
+fn get_greeting_annotation_has_no_element_value_pairs() {
+    let cf = open("TypeAnnotated.class");
+    let ann = &method_type_annotations(&cf, "getGreeting")[0];
+    assert_eq!(ann.num_element_value_pairs, 0);
+    assert!(ann.element_value_pairs.is_empty());
+}
+
+// ── add: METHOD_RETURN + two METHOD_FORMAL_PARAMETER annotations ────────────
+
+#[test]
+fn add_has_three_type_annotations() {
+    let cf = open("TypeAnnotated.class");
+    let annotations = method_type_annotations(&cf, "add");
+    assert_eq!(annotations.len(), 3);
+}
+
+#[test]
+fn add_first_annotation_is_method_return() {
+    let cf = open("TypeAnnotated.class");
+    let ann = &method_type_annotations(&cf, "add")[0];
+    assert_eq!(ann.type_annotation_info, TypeAnnotationInfo::EmptyTarget { target_type: 0x14 });
+    assert_eq!(cp_utf8(&cf.constant_pool, ann.type_index), "LTypeAnno;");
+    assert_eq!(ann.num_element_value_pairs, 0);
+}
+
+#[test]
+fn add_second_annotation_is_formal_parameter_0() {
+    let cf = open("TypeAnnotated.class");
+    let ann = &method_type_annotations(&cf, "add")[1];
+    assert_eq!(
+        ann.type_annotation_info,
+        TypeAnnotationInfo::FormalParameterTarget { target_type: 0x16, formal_parameter_index: 0 }
+    );
+    assert_eq!(cp_utf8(&cf.constant_pool, ann.type_index), "LTypeAnno;");
+    assert_eq!(ann.num_element_value_pairs, 0);
+}
+
+#[test]
+fn add_third_annotation_is_formal_parameter_1() {
+    let cf = open("TypeAnnotated.class");
+    let ann = &method_type_annotations(&cf, "add")[2];
+    assert_eq!(
+        ann.type_annotation_info,
+        TypeAnnotationInfo::FormalParameterTarget { target_type: 0x16, formal_parameter_index: 1 }
+    );
+    assert_eq!(cp_utf8(&cf.constant_pool, ann.type_index), "LTypeAnno;");
+    assert_eq!(ann.num_element_value_pairs, 0);
+}
+
+#[test]
+fn add_all_annotations_have_empty_type_path() {
+    let cf = open("TypeAnnotated.class");
+    for ann in method_type_annotations(&cf, "add") {
+        assert_eq!(ann.type_path.path_length, 0);
+        assert!(ann.type_path.paths.is_empty());
     }
-    panic!("RuntimeVisibleTypeAnnotations not found in add");
 }
