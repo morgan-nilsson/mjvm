@@ -1,12 +1,21 @@
-pub struct RunTimeConstantPool {
 
+#[derive(Debug)]
+pub struct ConstantPool {
+    constant_pool_info: Vec<ConstantPoolInfo>,
 }
 
-pub enum ConstantPoolEntry {
-    SymbolicReference {
-    },
-    StaticConstant {
-    },
+impl ConstantPool {
+    pub fn new(constant_pool_info: Vec<ConstantPoolInfo>) -> Self {
+        Self { constant_pool_info }
+    }
+
+    pub fn get(&self, index: usize) -> Option<&ConstantPoolInfo> {
+        self.constant_pool_info.get(index)
+    }
+
+    pub fn len(&self) -> usize {
+        self.constant_pool_info.len()
+    }
 }
 
 use std::convert::TryFrom;

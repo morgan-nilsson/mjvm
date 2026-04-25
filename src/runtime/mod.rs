@@ -1,8 +1,3 @@
 pub mod instruction;
 pub mod thread;
-pub mod runtime_const_pool;
-pub mod reference_table;
-
-pub mod array;
-pub mod interface;
-pub mod object;
+pub mod frame;
