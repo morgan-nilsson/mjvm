@@ -4,6 +4,9 @@ use thiserror::Error;
 #[derive(Error, Debug)]
 pub enum JVMError {
     // VirtualMachineErrors
+    #[error("The class file is invalid")]
+    InvalidClassFile,
+
     #[error("An internal error occurred during instruction execution")]
     InternalError,
 

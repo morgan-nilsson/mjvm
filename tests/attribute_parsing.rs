@@ -1,7 +1,6 @@
 use std::fs::File;
 
-use mjvm::class_file::{AccessFlags, AttributeInfo, ClassFile, MethodAccessFlags};
-use mjvm::constant_pool::ConstantPoolInfo;
+use mjvm::virtual_machine::class_file::class_file::{AccessFlags, AttributeInfo, ClassFile, MethodAccessFlags, ConstantPoolInfo};
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -526,7 +525,7 @@ fn anno_with_default_count_method_has_annotation_default() {
 
 #[test]
 fn anno_with_default_value_default_is_hello() {
-    use mjvm::class_file::ElementValue;
+    use mjvm::virtual_machine::class_file::class_file::ElementValue;
     let cf = open("AnnoWithDefault.class");
     let method = cf.methods.iter().find(|m| {
         cp_utf8(&cf.constant_pool, m.name_index) == "value"
@@ -546,7 +545,7 @@ fn anno_with_default_value_default_is_hello() {
 
 #[test]
 fn anno_with_default_count_default_is_zero() {
-    use mjvm::class_file::ElementValue;
+    use mjvm::virtual_machine::class_file::class_file::ElementValue;
     let cf = open("AnnoWithDefault.class");
     let method = cf.methods.iter().find(|m| {
         cp_utf8(&cf.constant_pool, m.name_index) == "count"

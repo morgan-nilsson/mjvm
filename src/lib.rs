@@ -1,4 +1,1 @@
-pub mod class_file;
-pub mod constant_pool;
-pub mod runtime;
-pub mod jvm_error;
+pub mod virtual_machine;

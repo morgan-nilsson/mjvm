@@ -1,7 +1,6 @@
 use std::fs::File;
 
-use mjvm::class_file::{AttributeInfo, ClassFile, TypeAnnotation, TypeAnnotationInfo};
-use mjvm::constant_pool::ConstantPoolInfo;
+use mjvm::virtual_machine::class_file::class_file::{AttributeInfo, ClassFile, TypeAnnotation, TypeAnnotationInfo, ConstantPoolInfo};
 
 fn open(fixture: &str) -> ClassFile {
     let file = File::open(format!("tests/fixtures/{}", fixture))
